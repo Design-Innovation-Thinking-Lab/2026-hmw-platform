@@ -1,0 +1,25 @@
+{
+  "name": "ai-hmw-starter",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "next dev -p 3000",
+    "build": "next build",
+    "start": "next start",
+    "worker": "node --env-file-if-exists=.env.local server/worker.js"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^1.3.0",
+    "@supabase/supabase-js": "^2.0.0",
+    "formidable": "^3.0.0",
+    "mammoth": "^1.4.21",
+    "next": "^14.2.35",
+    "nunjucks": "^3.2.4",
+    "openai": "^6.35.0",
+    "pdf-parse": "^1.1.1",
+    "react": "18.2.0",
+    "react-dom": "18.2.0",
+    "uuid": "^14.0.0"
+  }
+}

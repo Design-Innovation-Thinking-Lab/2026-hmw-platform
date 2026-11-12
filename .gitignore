@@ -1,0 +1,32 @@
+# Dependencies
+node_modules/
+
+# Next.js build output
+.next/
+out/
+
+# Env files (secrets)
+.env
+.env.local
+.env.*.local
+
+# OS files
+.DS_Store
+
+# Debug logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.spectra/
+openspec/.vector-search.db*
+
+# Deployment link files (contain project/org ids)
+.vercel/
+
+# Editor backups
+*.backup
+*.backup_*
+
+# DITL 研究室：所有 .env 檔都不 commit（範本檔除外）
+.env*
+!.env.local.example

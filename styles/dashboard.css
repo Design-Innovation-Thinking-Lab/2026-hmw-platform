@@ -1,0 +1,266 @@
+/* =====================================================
+   Dashboard Page Styles (dashboard.js)
+   Mobile-First Responsive Design
+   ===================================================== */
+
+.dashboard-page {
+    min-height: 100vh;
+    background: var(--bg-page);
+}
+
+/* =====================
+   Dashboard Header
+   ===================== */
+.dashboard-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: var(--space-3) var(--space-4);
+    background: var(--color-white);
+    border-bottom: 3px solid var(--color-dark);
+    box-shadow: 0 4px 0 var(--color-gray-200);
+    position: sticky;
+    top: 0;
+    z-index: 50;
+}
+
+@media (min-width: 640px) {
+    .dashboard-header {
+        padding: var(--space-4) var(--space-6);
+    }
+}
+
+.dashboard-logo {
+    font-size: var(--font-size-lg);
+    font-weight: 700;
+    color: var(--color-dark);
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+}
+
+.dashboard-header-actions {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+}
+
+@media (min-width: 640px) {
+    .dashboard-header-actions {
+        gap: var(--space-4);
+    }
+}
+
+.user-name-tag {
+    display: none;
+    font-size: var(--font-size-md);
+    color: var(--color-gray-700);
+    align-items: center;
+    gap: var(--space-2);
+}
+
+@media (min-width: 480px) {
+    .user-name-tag {
+        display: flex;
+    }
+}
+
+/* =====================
+   Dashboard Main
+   ===================== */
+.dashboard-main {
+    padding: var(--space-6) var(--space-4);
+}
+
+@media (min-width: 640px) {
+    .dashboard-main {
+        padding: var(--space-8) var(--space-6);
+    }
+}
+
+@media (min-width: 1024px) {
+    .dashboard-main {
+        padding: var(--space-10) var(--space-16);
+    }
+}
+
+.dashboard-title {
+    font-size: clamp(var(--font-size-3xl), 4vw, var(--font-size-4xl));
+    font-weight: 700;
+    color: var(--color-dark);
+    margin-bottom: var(--space-2);
+}
+
+.dashboard-subtitle {
+    font-size: var(--font-size-md);
+    color: var(--color-gray-500);
+    margin-bottom: var(--space-8);
+}
+
+/* =====================
+   Action Buttons
+   ===================== */
+.action-btn-row {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-4);
+    margin-bottom: var(--space-6);
+}
+
+@media (min-width: 480px) {
+    .action-btn-row {
+        flex-direction: row;
+    }
+}
+
+.action-btn {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: var(--space-3);
+    padding: var(--space-5) var(--space-6);
+    font-size: var(--font-size-xl);
+    font-weight: 700;
+    border: 3px solid var(--color-dark);
+    border-radius: var(--radius-xl);
+    cursor: pointer;
+    box-shadow: var(--shadow-neobrutalism-lg);
+    transition: var(--transition-base);
+    min-height: 72px;
+    background: var(--color-white);
+}
+
+.action-btn-blue {
+    color: var(--color-primary);
+}
+
+.action-btn-green {
+    color: var(--color-success);
+}
+
+.action-btn-active {
+    background: var(--color-dark);
+    color: var(--color-white);
+    box-shadow: var(--shadow-neobrutalism-sm);
+}
+
+/* =====================
+   Expanded Form Cards
+   ===================== */
+.expanded-card {
+    background: var(--color-white);
+    border-radius: var(--radius-xl);
+    border: 3px solid var(--color-primary);
+    padding: var(--space-6);
+    margin-bottom: var(--space-6);
+}
+
+.expanded-card-green {
+    background: var(--color-white);
+    border-radius: var(--radius-xl);
+    border: 3px solid var(--color-success);
+    padding: var(--space-6);
+    margin-bottom: var(--space-6);
+}
+
+/* =====================
+   Room History
+   ===================== */
+.history-section {
+    margin-top: var(--space-12);
+}
+
+.history-title {
+    font-size: var(--font-size-3xl);
+    font-weight: 700;
+    color: var(--color-dark);
+    margin-bottom: var(--space-5);
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+}
+
+.rooms-grid {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: var(--space-4);
+}
+
+@media (min-width: 640px) {
+    .rooms-grid {
+        grid-template-columns: repeat(2, 1fr);
+    }
+}
+
+@media (min-width: 1024px) {
+    .rooms-grid {
+        grid-template-columns: repeat(3, 1fr);
+    }
+}
+
+.room-card {
+    background: var(--color-white);
+    border-radius: var(--radius-xl);
+    border: 2px solid var(--color-gray-200);
+    padding: var(--space-5);
+    transition: var(--transition-base);
+}
+
+.room-card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: var(--space-3);
+    gap: var(--space-2);
+    min-width: 0;
+}
+
+.room-name {
+    font-size: var(--font-size-lg);
+    font-weight: 600;
+    color: var(--color-dark);
+    text-overflow: ellipsis;
+    overflow: hidden;
+    white-space: nowrap;
+}
+
+.room-code-badge {
+    font-size: var(--font-size-xs);
+    color: var(--color-gray-500);
+    background: var(--color-gray-100);
+    padding: var(--space-1) var(--space-2);
+    border-radius: var(--radius-sm);
+    flex-shrink: 0;
+}
+
+.room-meta {
+    font-size: var(--font-size-sm);
+    color: var(--color-gray-500);
+    margin-bottom: var(--space-3);
+    display: flex;
+    align-items: flex-start;
+    gap: var(--space-2);
+}
+
+.room-footer {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: var(--space-3);
+}
+
+.room-members {
+    font-size: var(--font-size-sm);
+    color: var(--color-gray-700);
+    font-weight: 500;
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+}
+
+.room-role {
+    font-size: var(--font-size-xs);
+    color: var(--color-primary);
+    font-weight: 500;
+}
