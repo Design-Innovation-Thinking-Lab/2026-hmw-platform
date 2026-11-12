@@ -25,7 +25,7 @@
 ### 接手（學生）
 
 1. 在 GitHub 的 **Settings → Emails** 開啟「Keep my email addresses private」，本機 Git Email 設成 GitHub 給你的 noreply 信箱。這個 repo 是公開的。
-2. `git clone https://github.com/Design-Innovation-Thinking-Lab/2026-jenny-hmw-platform.git`，之後都在這個資料夾開發，不要再改交 zip 之前的舊資料夾。
+2. `git clone https://github.com/Design-Innovation-Thinking-Lab/2026-hmw-platform.git`，之後都在這個資料夾開發，不要再改交 zip 之前的舊資料夾。
 3. 每項修改開一個分支、發 Pull Request；`main` 要經過 PR 才能合併。
 4. 環境變數和金鑰由老師在 Vercel 設定；本機開發需要的值請找老師或助理，用老師指定的方式取得，不要貼到聊天、網頁或 AI 對話裡。
 5. 部署失敗請找老師或助理（學生的 Vercel Viewer 權限看不到 log）。
