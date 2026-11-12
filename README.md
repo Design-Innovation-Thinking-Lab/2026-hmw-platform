@@ -5,7 +5,7 @@
 | 項目 | 內容 |
 |---|---|
 | 用途 | 上傳訪談逐字稿，AI 依多步驟流程分析，產出 HMW 問題句，團隊在研究室裡投票 |
-| 負責人 | DITL Jenny（Email、電話只寫在研究室的私有登記表） |
+| 負責人 | DITL Jintin（開發）；DITL Jenny（接手）（Email、電話只寫在研究室的私有登記表） |
 | 網站 | https://2026-hmw-platform.vercel.app/ （測試中，只放假資料） |
 | 用到的服務 | GitHub（本 repo）、Vercel（網站與 API、Cron）、Supabase（資料庫、Storage 私人 bucket `uploads`）、Anthropic API（研究室的 key） |
 | 聯絡 | drhhtang@gapps.ntust.edu.tw |
