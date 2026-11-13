@@ -1,4 +1,5 @@
 import { createClient } from '@supabase/supabase-js'
+import { hashPassword } from '../../lib/password'
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
 const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY
@@ -47,7 +48,8 @@ export default async function handler(req, res) {
                 name,
                 age: age ? parseInt(age) : null,
                 occupation,
-                verification_password
+                // 只存雜湊，不存明文
+                verification_password: await hashPassword(verification_password)
             }
 
             // Add fields based on occupation type
