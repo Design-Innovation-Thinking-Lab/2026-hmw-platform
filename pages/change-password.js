@@ -95,12 +95,12 @@ export default function ChangePasswordPage() {
                 ) : (
                     <form onSubmit={handleSubmit}>
                         <div className="form-group">
-                            <label className="form-label">目前密碼（預設密碼）</label>
+                            <label className="form-label">目前密碼</label>
                             <input
                                 type="password"
                                 value={currentPassword}
                                 onChange={e => setCurrentPassword(e.target.value)}
-                                placeholder="請輸入管理員提供的預設密碼"
+                                placeholder="管理員提供的臨時密碼，或你目前的密碼"
                                 className="form-input"
                                 autoFocus
                             />

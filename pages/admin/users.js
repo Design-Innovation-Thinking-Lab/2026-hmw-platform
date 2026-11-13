@@ -174,7 +174,7 @@ export default function AdminUsersPage() {
 
     // --- Password Reset ---
     async function handleResetPassword(userId, userName) {
-        if (!confirm(`確定要將「${userName}」的密碼重設為預設密碼（0000）嗎？\n該使用者下次登入時須自行變更密碼。`)) {
+        if (!confirm(`確定要重設「${userName}」的密碼嗎？\n系統會產生一組臨時密碼，該使用者下次登入時須自行變更密碼。`)) {
             return
         }
         setResettingPassword(userId)
@@ -188,6 +188,8 @@ export default function AdminUsersPage() {
             const data = await res.json()
             if (!res.ok) throw new Error(data.error)
             setSuccess(data.message)
+            // 臨時密碼只會出現這一次；用 prompt 顯示，不會自動消失，也方便複製
+            window.prompt(`「${userName}」的臨時密碼（只會顯示這一次，請複製後交給使用者）：`, data.tempPassword)
         } catch (err) {
             setError(err.message)
         } finally {

@@ -1,4 +1,5 @@
 import { createClient } from '@supabase/supabase-js'
+import { verifyPassword } from '../../../lib/password'
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
 const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY
@@ -26,14 +27,15 @@ export default async function handler(req, res) {
                 return res.status(400).json({ error: '請輸入驗證密碼' })
             }
 
-            const { data, error } = await supabaseAdmin
+            // 先用學號找人，再在伺服器端比對雜湊（不能拿明文去資料庫查）
+            const { data } = await supabaseAdmin
                 .from('users')
-                .select('id, name, occupation, is_admin, must_change_password')
+                .select('id, name, occupation, is_admin, must_change_password, verification_password')
                 .eq('student_id', student_id.toUpperCase())
-                .eq('verification_password', verification_password)
-                .single()
+                .maybeSingle()
 
-            if (error || !data) {
+            const ok = await verifyPassword(verification_password, data?.verification_password)
+            if (!data || !ok) {
                 return res.status(401).json({ error: '學號或驗證密碼錯誤' })
             }
 
@@ -47,14 +49,15 @@ export default async function handler(req, res) {
                 return res.status(400).json({ error: '請輸入驗證密碼' })
             }
 
-            const { data, error } = await supabaseAdmin
+            // 先用 Email 找人，再在伺服器端比對雜湊
+            const { data } = await supabaseAdmin
                 .from('users')
-                .select('id, name, occupation, is_admin, must_change_password')
+                .select('id, name, occupation, is_admin, must_change_password, verification_password')
                 .eq('email', email.toLowerCase().trim())
-                .eq('verification_password', verification_password)
-                .single()
+                .maybeSingle()
 
-            if (error || !data) {
+            const ok = await verifyPassword(verification_password, data?.verification_password)
+            if (!data || !ok) {
                 return res.status(401).json({ error: 'Email 或驗證密碼錯誤' })
             }
 

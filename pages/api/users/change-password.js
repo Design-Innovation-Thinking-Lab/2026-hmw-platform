@@ -3,6 +3,7 @@
  * User changes their own password. Clears must_change_password flag.
  */
 import { createClient } from '@supabase/supabase-js'
+import { hashPassword, verifyPassword } from '../../../lib/password'
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
 const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY
@@ -38,7 +39,7 @@ export default async function handler(req, res) {
             return res.status(404).json({ error: '找不到使用者' })
         }
 
-        if (user.verification_password !== currentPassword) {
+        if (!(await verifyPassword(currentPassword, user.verification_password))) {
             return res.status(401).json({ error: '目前密碼不正確' })
         }
 
@@ -50,7 +51,7 @@ export default async function handler(req, res) {
         const { error } = await supabaseAdmin
             .from('users')
             .update({
-                verification_password: newPassword,
+                verification_password: await hashPassword(newPassword),
                 must_change_password: false
             })
             .eq('id', userId)
