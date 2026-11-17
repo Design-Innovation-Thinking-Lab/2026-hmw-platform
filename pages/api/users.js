@@ -1,11 +1,7 @@
-import { createClient } from '@supabase/supabase-js'
+import { supabaseAdmin } from '../../lib/serverAuth'
+import { MIN_PASSWORD_LENGTH } from '../../lib/password'
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
-const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY
-
-const supabaseAdmin = createClient(supabaseUrl, serviceRoleKey, {
-    auth: { persistSession: false }
-})
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
 export default async function handler(req, res) {
     const { method } = req
@@ -16,10 +12,10 @@ export default async function handler(req, res) {
             name,
             age,
             occupation,
-            // Login credentials
+            // Login credentials（密碼只交給 Supabase Auth，不存進 users 表）
             student_id,
             email,
-            verification_password,
+            password,
             // Student fields
             school,
             department,
@@ -38,16 +34,33 @@ export default async function handler(req, res) {
             return res.status(400).json({ error: '姓名和職業為必填欄位' })
         }
 
-        if (!verification_password) {
-            return res.status(400).json({ error: '請設定驗證密碼' })
+        const normalizedEmail = typeof email === 'string' ? email.toLowerCase().trim() : ''
+        if (!normalizedEmail || !EMAIL_PATTERN.test(normalizedEmail)) {
+            return res.status(400).json({ error: '請輸入正確的 Email（登入用）' })
         }
 
+        if (typeof password !== 'string' || password.length < MIN_PASSWORD_LENGTH) {
+            return res.status(400).json({ error: `密碼至少需要 ${MIN_PASSWORD_LENGTH} 個字元` })
+        }
+
+        let authUserId = null
         try {
             const userData = {
                 name,
                 age: age ? parseInt(age) : null,
                 occupation,
-                verification_password
+                email: normalizedEmail
+            }
+
+            // Check if email already exists
+            const { data: existingEmail } = await supabaseAdmin
+                .from('users')
+                .select('id')
+                .eq('email', normalizedEmail)
+                .maybeSingle()
+
+            if (existingEmail) {
+                return res.status(400).json({ error: '此 Email 已被註冊，請直接登入' })
             }
 
             // Add fields based on occupation type
@@ -61,7 +74,7 @@ export default async function handler(req, res) {
                     .from('users')
                     .select('id')
                     .eq('student_id', student_id.toUpperCase())
-                    .single()
+                    .maybeSingle()
 
                 if (existingStudent) {
                     return res.status(400).json({ error: '此學號已被註冊，請直接登入' })
@@ -73,22 +86,6 @@ export default async function handler(req, res) {
                 userData.major = major
                 userData.grade = grade
             } else {
-                if (!email) {
-                    return res.status(400).json({ error: '非學生必須填寫 Email' })
-                }
-
-                // Check if email already exists
-                const { data: existingEmail } = await supabaseAdmin
-                    .from('users')
-                    .select('id')
-                    .eq('email', email.toLowerCase().trim())
-                    .single()
-
-                if (existingEmail) {
-                    return res.status(400).json({ error: '此 Email 已被註冊，請直接登入' })
-                }
-
-                userData.email = email.toLowerCase().trim()
                 userData.industry = industry
                 userData.position = position
                 userData.highest_education_school = highest_education_school
@@ -97,9 +94,33 @@ export default async function handler(req, res) {
                 userData.highest_education_grade = highest_education_grade
             }
 
+            // 1. 在 Supabase Auth 建帳號，密碼由 Supabase 保管。
+            //    在伺服器端建立並直接設成已驗證：Supabase 內建的寄信服務只寄給專案成員，
+            //    學生收不到驗證信。
+            const { data: created, error: authError } = await supabaseAdmin.auth.admin.createUser({
+                email: normalizedEmail,
+                password,
+                email_confirm: true
+            })
+
+            if (authError || !created?.user) {
+                console.error('Error creating auth user:', authError)
+                // 錯誤代碼見 @supabase/auth-js 的 lib/error-codes
+                const code = authError?.code
+                if (code === 'email_exists' || code === 'user_already_exists') {
+                    return res.status(400).json({ error: '此 Email 已被註冊，請直接登入' })
+                }
+                if (code === 'weak_password') {
+                    return res.status(400).json({ error: '密碼不符合規則，請換一組更長或更複雜的密碼' })
+                }
+                return res.status(500).json({ error: '建立帳號失敗，請稍後再試' })
+            }
+            authUserId = created.user.id
+
+            // 2. users 表的 id 和 Supabase Auth 的帳號 id 相同，其他資料表照舊用 users.id
             const { data, error } = await supabaseAdmin
                 .from('users')
-                .insert(userData)
+                .insert({ ...userData, id: authUserId })
                 .select()
                 .single()
 
@@ -115,7 +136,12 @@ export default async function handler(req, res) {
             return res.status(200).json({ success: true, user: safeUser })
         } catch (err) {
             console.error('Error creating user:', err)
-            return res.status(500).json({ error: err.message })
+            // users 寫入失敗時，刪掉剛建立的 Auth 帳號，避免留下沒有資料的帳號
+            if (authUserId) {
+                const { error: cleanupError } = await supabaseAdmin.auth.admin.deleteUser(authUserId)
+                if (cleanupError) console.error('Error cleaning up auth user:', cleanupError)
+            }
+            return res.status(500).json({ error: '建立帳號失敗，請稍後再試' })
         }
     }
 

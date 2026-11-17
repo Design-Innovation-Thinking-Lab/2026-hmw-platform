@@ -1,59 +1,58 @@
 /**
  * POST /api/users/change-password
- * User changes their own password. Clears must_change_password flag.
+ * 使用者變更自己的密碼，並清除 must_change_password。
+ * 需要 Authorization: Bearer <Supabase access_token>；
+ * 是誰由伺服器向 Supabase 驗證，不相信前端送來的 userId。
  */
-import { createClient } from '@supabase/supabase-js'
-
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
-const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY
-
-const supabaseAdmin = createClient(supabaseUrl, serviceRoleKey, {
-    auth: { persistSession: false }
-})
+import { supabaseAdmin, getAuthUser, checkPassword } from '../../../lib/serverAuth'
+import { MIN_PASSWORD_LENGTH } from '../../../lib/password'
 
 export default async function handler(req, res) {
     if (req.method !== 'POST') {
         return res.status(405).json({ error: 'Method not allowed' })
     }
 
-    const { userId, currentPassword, newPassword } = req.body
+    const authUser = await getAuthUser(req)
+    if (!authUser) {
+        return res.status(401).json({ error: '登入已失效，請重新登入' })
+    }
 
-    if (!userId || !newPassword) {
+    const { currentPassword, newPassword } = req.body || {}
+
+    if (!currentPassword || !newPassword) {
         return res.status(400).json({ error: '缺少必要參數' })
     }
 
-    if (newPassword.length < 4) {
-        return res.status(400).json({ error: '新密碼至少需要 4 個字元' })
+    if (typeof newPassword !== 'string' || newPassword.length < MIN_PASSWORD_LENGTH) {
+        return res.status(400).json({ error: `新密碼至少需要 ${MIN_PASSWORD_LENGTH} 個字元` })
+    }
+
+    if (newPassword === currentPassword) {
+        return res.status(400).json({ error: '新密碼不能與目前密碼相同' })
     }
 
     try {
-        // Verify current password
-        const { data: user, error: userError } = await supabaseAdmin
-            .from('users')
-            .select('id, name, verification_password')
-            .eq('id', userId)
-            .single()
-
-        if (userError || !user) {
-            return res.status(404).json({ error: '找不到使用者' })
-        }
-
-        if (user.verification_password !== currentPassword) {
+        // 向 Supabase Auth 確認目前密碼
+        const ok = await checkPassword(authUser.email, currentPassword)
+        if (!ok) {
             return res.status(401).json({ error: '目前密碼不正確' })
         }
 
-        if (newPassword === currentPassword) {
-            return res.status(400).json({ error: '新密碼不能與目前密碼相同' })
+        const { error: authError } = await supabaseAdmin.auth.admin.updateUserById(authUser.id, {
+            password: newPassword
+        })
+        if (authError) {
+            console.error('Error updating auth password:', authError)
+            if (authError.code === 'weak_password') {
+                return res.status(400).json({ error: '新密碼不符合規則，請換一組更長或更複雜的密碼' })
+            }
+            return res.status(500).json({ error: '變更密碼失敗，請稍後再試' })
         }
 
-        // Update password and clear flag
         const { error } = await supabaseAdmin
             .from('users')
-            .update({
-                verification_password: newPassword,
-                must_change_password: false
-            })
-            .eq('id', userId)
+            .update({ must_change_password: false })
+            .eq('id', authUser.id)
 
         if (error) throw error
 
@@ -63,6 +62,6 @@ export default async function handler(req, res) {
         })
     } catch (err) {
         console.error('Error changing password:', err)
-        return res.status(500).json({ error: err.message })
+        return res.status(500).json({ error: '變更密碼失敗，請稍後再試' })
     }
 }

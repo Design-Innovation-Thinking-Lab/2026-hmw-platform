@@ -1,6 +1,8 @@
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/router'
 import { Lock, AlertTriangle, Check } from '../components/icons'
+import { supabase } from '../lib/supabaseClient'
+import { MIN_PASSWORD_LENGTH } from '../lib/password'
 
 export default function ChangePasswordPage() {
     const router = useRouter()
@@ -36,8 +38,8 @@ export default function ChangePasswordPage() {
             setError('請輸入新密碼')
             return
         }
-        if (newPassword.length < 4) {
-            setError('新密碼至少需要 4 個字元')
+        if (newPassword.length < MIN_PASSWORD_LENGTH) {
+            setError(`新密碼至少需要 ${MIN_PASSWORD_LENGTH} 個字元`)
             return
         }
         if (newPassword !== confirmPassword) {
@@ -51,10 +53,19 @@ export default function ChangePasswordPage() {
 
         setLoading(true)
         try {
+            // 伺服器用 Supabase 的登入憑證確認是誰，不用送 userId
+            const { data: { session } } = await supabase.auth.getSession()
+            if (!session) {
+                router.push('/login?returnUrl=/change-password')
+                return
+            }
             const res = await fetch('/api/users/change-password', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ userId, currentPassword, newPassword })
+                headers: {
+                    'Content-Type': 'application/json',
+                    Authorization: `Bearer ${session.access_token}`
+                },
+                body: JSON.stringify({ currentPassword, newPassword })
             })
             const data = await res.json()
             if (!res.ok) throw new Error(data.error)
@@ -95,12 +106,12 @@ export default function ChangePasswordPage() {
                 ) : (
                     <form onSubmit={handleSubmit}>
                         <div className="form-group">
-                            <label className="form-label">目前密碼（預設密碼）</label>
+                            <label className="form-label">目前密碼</label>
                             <input
                                 type="password"
                                 value={currentPassword}
                                 onChange={e => setCurrentPassword(e.target.value)}
-                                placeholder="請輸入管理員提供的預設密碼"
+                                placeholder="管理員提供的臨時密碼，或你目前的密碼"
                                 className="form-input"
                                 autoFocus
                             />
@@ -112,7 +123,7 @@ export default function ChangePasswordPage() {
                                 type="password"
                                 value={newPassword}
                                 onChange={e => setNewPassword(e.target.value)}
-                                placeholder="請輸入新密碼（至少 4 個字元）"
+                                placeholder={`請輸入新密碼（至少 ${MIN_PASSWORD_LENGTH} 個字元）`}
                                 className="form-input"
                             />
                         </div>

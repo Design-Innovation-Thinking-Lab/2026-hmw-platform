@@ -2,22 +2,19 @@ import { useState, useEffect } from 'react'
 import { useRouter } from 'next/router'
 import {
     Lock,
-    GraduationCap,
-    Briefcase,
     AlertTriangle,
     Rocket,
     ArrowLeft
 } from '../components/icons'
+import { supabase } from '../lib/supabaseClient'
 
 export default function LoginPage() {
     const router = useRouter()
     const [loading, setLoading] = useState(false)
     const [error, setError] = useState(null)
-    const [loginType, setLoginType] = useState('student')
 
-    const [studentId, setStudentId] = useState('')
     const [email, setEmail] = useState('')
-    const [verificationPassword, setVerificationPassword] = useState('')
+    const [password, setPassword] = useState('')
 
     useEffect(() => {
         const userId = localStorage.getItem('userId')
@@ -32,29 +29,31 @@ export default function LoginPage() {
         setLoading(true)
         setError(null)
 
-        if (loginType === 'student') {
-            if (!studentId.trim()) { setError('請輸入學號'); setLoading(false); return }
-            if (!verificationPassword.trim()) { setError('請輸入驗證密碼'); setLoading(false); return }
-        }
-        if (loginType === 'other') {
-            if (!email.trim()) { setError('請輸入 Email'); setLoading(false); return }
-            if (!verificationPassword.trim()) { setError('請輸入驗證密碼'); setLoading(false); return }
-        }
+        if (!email.trim()) { setError('請輸入 Email'); setLoading(false); return }
+        if (!password) { setError('請輸入密碼'); setLoading(false); return }
 
         try {
+            // 1. 交給 Supabase Auth 驗證 email＋密碼
+            const { data: auth, error: authError } = await supabase.auth.signInWithPassword({
+                email: email.trim().toLowerCase(),
+                password
+            })
+            if (authError || !auth?.session) {
+                // 帳號不存在和密碼錯誤用同一個訊息，不透露帳號是否存在
+                throw new Error('Email 或密碼錯誤')
+            }
+
+            // 2. 帶著 Supabase 的登入憑證向伺服器取得使用者資料
             const res = await fetch('/api/users/login', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    login_type: loginType,
-                    student_id: loginType === 'student' ? studentId.toUpperCase() : null,
-                    email: loginType === 'other' ? email.trim() : null,
-                    verification_password: verificationPassword
-                })
+                headers: { Authorization: `Bearer ${auth.session.access_token}` }
             })
 
             const data = await res.json()
-            if (!res.ok) throw new Error(data.error)
+            if (!res.ok) {
+                await supabase.auth.signOut({ scope: 'local' })
+                throw new Error(data.error)
+            }
 
             localStorage.setItem('userId', data.user.id)
             localStorage.setItem('userName', data.user.name)
@@ -81,69 +80,38 @@ export default function LoginPage() {
                     <Lock size={32} color="#4361ee" />
                     <h1 className="auth-title">登入平台</h1>
                 </div>
-                <p className="auth-subtitle">使用您的學號或 Email 登入</p>
+                <p className="auth-subtitle">使用您註冊時填寫的 Email 登入</p>
 
                 {error && <div className="alert alert-error">{error}</div>}
 
-                {/* Login Type Selector */}
-                <div className="type-selector">
-                    <button
-                        type="button"
-                        onClick={() => setLoginType('student')}
-                        className={`type-btn ${loginType === 'student' ? 'type-btn-active' : ''}`}
-                    >
-                        <GraduationCap size={18} /> 學生登入
-                    </button>
-                    <button
-                        type="button"
-                        onClick={() => setLoginType('other')}
-                        className={`type-btn ${loginType === 'other' ? 'type-btn-active' : ''}`}
-                    >
-                        <Briefcase size={18} /> 其他身份
-                    </button>
-                </div>
-
                 <form onSubmit={handleSubmit}>
-                    {loginType === 'student' ? (
-                        <div className="form-group">
-                            <label className="form-label">學號</label>
-                            <input
-                                type="text"
-                                value={studentId}
-                                onChange={e => setStudentId(e.target.value.toUpperCase())}
-                                placeholder="例：M11400000"
-                                className="form-input"
-                                autoFocus
-                            />
-                            <small className="form-hint">請輸入您註冊時填寫的學號</small>
-                        </div>
-                    ) : (
-                        <div className="form-group">
-                            <label className="form-label">Email</label>
-                            <input
-                                type="email"
-                                value={email}
-                                onChange={e => setEmail(e.target.value)}
-                                placeholder="請輸入您的 Email"
-                                className="form-input"
-                                autoFocus
-                            />
-                        </div>
-                    )}
+                    <div className="form-group">
+                        <label className="form-label">Email</label>
+                        <input
+                            type="email"
+                            value={email}
+                            onChange={e => setEmail(e.target.value)}
+                            placeholder="請輸入您的 Email"
+                            className="form-input"
+                            autoComplete="email"
+                            autoFocus
+                        />
+                    </div>
 
                     <div className="form-group">
-                        <label className="form-label">驗證密碼</label>
+                        <label className="form-label">密碼</label>
                         <input
                             type="password"
-                            value={verificationPassword}
-                            onChange={e => setVerificationPassword(e.target.value)}
-                            placeholder="請輸入驗證密碼"
+                            value={password}
+                            onChange={e => setPassword(e.target.value)}
+                            placeholder="請輸入密碼"
                             className="form-input"
+                            autoComplete="current-password"
                         />
                         <div className="alert alert-warning" style={{ marginTop: 8, marginBottom: 0 }}>
                             <AlertTriangle size={16} style={{ flexShrink: 0 }} />
                             <span>
-                                此為唯一驗證入口。如遺失請 email 洽研究者變更：
+                                忘記密碼請 email 洽研究者重設：
                                 <a href="mailto:drhhtang@gapps.ntust.edu.tw" style={{ color: '#b45309', fontWeight: 500 }}>
                                     drhhtang@gapps.ntust.edu.tw
                                 </a>

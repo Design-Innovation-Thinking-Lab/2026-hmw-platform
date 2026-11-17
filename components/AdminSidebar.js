@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/router'
+import { supabase } from '../lib/supabaseClient'
 import {
     Home,
     Settings,
@@ -39,6 +40,7 @@ export default function AdminSidebar({ isAdmin = false, currentPath = '', userNa
     }
 
     const handleLogout = () => {
+        supabase.auth.signOut({ scope: 'local' }).catch(() => {})
         localStorage.removeItem('adminAuth')
         localStorage.removeItem('adminAuthTime')
         localStorage.removeItem('isAdmin')

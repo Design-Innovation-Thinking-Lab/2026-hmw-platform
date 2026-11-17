@@ -5,7 +5,7 @@
 -- 使用方式：整檔複製，貼進 Supabase Dashboard → SQL Editor → Run。
 --
 -- ⚠️ 請先確認第 1 份已執行成功，再跑這份。
---    最後的 024 會寫入三種預設分析模式（領航員／教練／建築師）的 prompt。
+--    其中的 024 會寫入三種預設分析模式（領航員／教練／建築師）的 prompt。
 --    沒有它平台雖然能啟動，但後台看不到任何分析模式、一個分析都跑不出來。
 --
 -- 本檔由 migrations/ 內的下列檔案依序合併而成（內容完全相同）：
@@ -13,6 +13,7 @@
 --   022_password_reset.sql
 --   023_hmw_votes_vote_type.sql
 --   024_seed_default_analysis_modes.sql
+--   025_supabase_auth.sql
 -- ═══════════════════════════════════════════════════════════════════════════
 
 
@@ -513,3 +514,37 @@ $$你已經歸納使用者在每個 JTBD 上的痛點、動機與相關語句，
 請根據以上 JTBD 結果，輸出 JSON 格式的 HMW 問題清單，包含hmw清單，每個項目含 HMW問題句、對應JTBD、核心主題、優先級與逐字稿來源標示。$$)
 ON CONFLICT (id) DO NOTHING;
 
+
+-- ╔═══════════════════════════════════════════════════════════════════════╗
+-- ║  025_supabase_auth.sql                                                ║
+-- ╚═══════════════════════════════════════════════════════════════════════╝
+
+-- =============================================
+-- 025: 密碼改由 Supabase Auth 保管，移除明文密碼欄位
+-- =============================================
+-- 功能：
+--   users.verification_password 原本存明文，登入用 .eq() 直接比對；
+--   013 還把學生的預設密碼設成學號。
+--   程式改成用 Supabase Auth 註冊、登入與改密碼（lib/serverAuth.js），
+--   密碼只存在 Supabase Auth，users 表不再需要這個欄位，這支把它整欄刪除。
+--
+--   改用 Supabase Auth 之後註冊的帳號，users.id 和 Supabase Auth 的帳號 id 相同，
+--   其他資料表照舊參照 users.id，不用改。
+--
+-- 影響資料表：users（刪除 verification_password 欄位）
+--
+-- 執行時機：先部署新版程式、再執行這支（新版程式完全不讀這個欄位）。
+--   如果先執行這支，舊版程式的登入、註冊會壞掉。
+--
+-- 對既有帳號的影響：改用 Supabase Auth 之前建立的帳號沒有 Supabase Auth 帳號，
+--   執行前後都無法用新版程式登入，需要重新註冊（目前資料庫只有測試用的假資料）。
+--
+-- 可重跑：用 DROP COLUMN IF EXISTS，欄位已經不在時不會出錯。
+--
+-- 回滾方式：欄位裡的明文密碼會被刪除，無法還原，這支不能回滾。
+-- =============================================
+
+ALTER TABLE users DROP COLUMN IF EXISTS verification_password;
+
+COMMENT ON COLUMN users.id IS
+  'Accounts created after 025 use the same id as auth.users.id (Supabase Auth). Passwords live only in Supabase Auth.';

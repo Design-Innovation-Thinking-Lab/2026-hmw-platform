@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/router'
+import { supabase } from '../lib/supabaseClient'
 import {
     BrainCircuit,
     LogOut,
@@ -146,6 +147,7 @@ export default function DashboardPage() {
     }
 
     const handleLogout = () => {
+        supabase.auth.signOut({ scope: 'local' }).catch(() => {})
         localStorage.removeItem('userId')
         localStorage.removeItem('userName')
         router.push('/')
