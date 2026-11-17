@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/router'
+import { supabase } from '../../lib/supabaseClient'
 
 export default function AdminLoginPage() {
     const router = useRouter()
@@ -52,6 +53,7 @@ export default function AdminLoginPage() {
     }
 
     const handleLogoutAndRetry = () => {
+        supabase.auth.signOut({ scope: 'local' }).catch(() => {})
         localStorage.removeItem('userId')
         localStorage.removeItem('userName')
         localStorage.removeItem('adminAuth')

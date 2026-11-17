@@ -9,6 +9,8 @@ import {
     ArrowLeft,
     ArrowRight
 } from '../components/icons'
+import { supabase } from '../lib/supabaseClient'
+import { MIN_PASSWORD_LENGTH } from '../lib/password'
 
 export default function RegisterPage() {
     const router = useRouter()
@@ -21,7 +23,7 @@ export default function RegisterPage() {
         occupation: '',
         student_id: '',
         email: '',
-        verification_password: '',
+        password: '',
         confirm_password: '',
         school: '',
         department: '',
@@ -55,24 +57,32 @@ export default function RegisterPage() {
         if (!formData.occupation) { setError('請選擇職業'); setLoading(false); return }
 
         if (isStudent && !formData.student_id.trim()) { setError('請輸入學號'); setLoading(false); return }
-        if (!isStudent && !formData.email.trim()) { setError('請輸入 Email'); setLoading(false); return }
-        if (!formData.verification_password) { setError('請設定驗證密碼'); setLoading(false); return }
-        if (formData.verification_password.length < 4) { setError('驗證密碼至少需要 4 個字元'); setLoading(false); return }
-        if (formData.verification_password !== formData.confirm_password) { setError('兩次輸入的密碼不一致'); setLoading(false); return }
+        if (!formData.email.trim()) { setError('請輸入 Email'); setLoading(false); return }
+        if (!formData.password) { setError('請設定密碼'); setLoading(false); return }
+        if (formData.password.length < MIN_PASSWORD_LENGTH) { setError(`密碼至少需要 ${MIN_PASSWORD_LENGTH} 個字元`); setLoading(false); return }
+        if (formData.password !== formData.confirm_password) { setError('兩次輸入的密碼不一致'); setLoading(false); return }
 
         try {
+            const { confirm_password, ...payload } = formData
             const res = await fetch('/api/users', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                    ...formData,
+                    ...payload,
                     student_id: isStudent ? formData.student_id.toUpperCase() : null,
-                    email: !isStudent ? formData.email.trim() : null
+                    email: formData.email.trim()
                 })
             })
 
             const data = await res.json()
             if (!res.ok) throw new Error(data.error)
+
+            // 帳號建好後直接登入，取得 Supabase 的登入狀態
+            const { error: signInError } = await supabase.auth.signInWithPassword({
+                email: formData.email.trim().toLowerCase(),
+                password: formData.password
+            })
+            if (signInError) throw new Error('帳號已建立，但自動登入失敗，請到登入頁登入')
 
             localStorage.setItem('userId', data.user.id)
             localStorage.setItem('userName', data.user.name)
@@ -143,38 +153,47 @@ export default function RegisterPage() {
                         </div>
                     </div>
 
-                    {/* Student Fields */}
-                    {isStudent && (
+                    {/* Login Fields（所有人都用 Email＋密碼登入） */}
+                    {formData.occupation && (
                         <div className="register-section">
-                            <h3 className="register-section-title">
-                                <GraduationCap size={20} /> 學生資料
-                            </h3>
+                            <h3 className="register-section-title">登入資料</h3>
 
                             <div className="form-group">
                                 <label className="form-label">
-                                    學號 * <span className="required-label">(登入用)</span>
+                                    Email * <span className="required-label">(登入用)</span>
                                 </label>
                                 <input
-                                    type="text"
-                                    value={formData.student_id}
-                                    onChange={e => handleChange('student_id', e.target.value.toUpperCase())}
-                                    placeholder="例：M11400000"
+                                    type="email"
+                                    value={formData.email}
+                                    onChange={e => handleChange('email', e.target.value)}
+                                    placeholder="請輸入您的 Email"
                                     className="form-input"
+                                    autoComplete="email"
                                 />
-                                <small className="form-hint">學號將作為您未來登入的唯一識別碼</small>
+                                <small className="form-hint">Email 將作為您未來登入的帳號</small>
                             </div>
 
                             <div className="form-group">
                                 <label className="form-label">
-                                    驗證密碼 * <span className="required-label">(登入用)</span>
+                                    密碼 * <span className="required-label">(登入用)</span>
                                 </label>
                                 <input
                                     type="password"
-                                    value={formData.verification_password}
-                                    onChange={e => handleChange('verification_password', e.target.value)}
-                                    placeholder="請設定驗證密碼（至少 4 字元）"
+                                    value={formData.password}
+                                    onChange={e => handleChange('password', e.target.value)}
+                                    placeholder={`請設定密碼（至少 ${MIN_PASSWORD_LENGTH} 個字元）`}
                                     className="form-input"
+                                    autoComplete="new-password"
                                 />
+                                <div className="alert alert-warning" style={{ marginTop: 8, marginBottom: 0 }}>
+                                    <AlertTriangle size={16} style={{ flexShrink: 0 }} />
+                                    <span>
+                                        忘記密碼請 email 洽研究者重設：
+                                        <a href="mailto:drhhtang@gapps.ntust.edu.tw" style={{ color: '#b45309', fontWeight: 500 }}>
+                                            drhhtang@gapps.ntust.edu.tw
+                                        </a>
+                                    </span>
+                                </div>
                             </div>
 
                             <div className="form-group">
@@ -183,7 +202,28 @@ export default function RegisterPage() {
                                     type="password"
                                     value={formData.confirm_password}
                                     onChange={e => handleChange('confirm_password', e.target.value)}
-                                    placeholder="再次輸入驗證密碼"
+                                    placeholder="再次輸入密碼"
+                                    className="form-input"
+                                    autoComplete="new-password"
+                                />
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Student Fields */}
+                    {isStudent && (
+                        <div className="register-section">
+                            <h3 className="register-section-title">
+                                <GraduationCap size={20} /> 學生資料
+                            </h3>
+
+                            <div className="form-group">
+                                <label className="form-label">學號 *</label>
+                                <input
+                                    type="text"
+                                    value={formData.student_id}
+                                    onChange={e => handleChange('student_id', e.target.value.toUpperCase())}
+                                    placeholder="例：M11400000"
                                     className="form-input"
                                 />
                             </div>
@@ -238,49 +278,6 @@ export default function RegisterPage() {
                             <h3 className="register-section-title">
                                 <Briefcase size={20} /> 職業資料
                             </h3>
-
-                            <div className="form-group">
-                                <label className="form-label">
-                                    Email * <span className="required-label">(登入用)</span>
-                                </label>
-                                <input
-                                    type="email"
-                                    value={formData.email}
-                                    onChange={e => handleChange('email', e.target.value)}
-                                    placeholder="請輸入您的 Email"
-                                    className="form-input"
-                                />
-                                <small className="form-hint">Email 將作為您未來登入的唯一識別碼</small>
-                            </div>
-
-                            <div className="form-group">
-                                <label className="form-label">
-                                    驗證密碼 * <span className="required-label">(登入用)</span>
-                                </label>
-                                <input
-                                    type="password"
-                                    value={formData.verification_password}
-                                    onChange={e => handleChange('verification_password', e.target.value)}
-                                    placeholder="請設定驗證密碼（至少 4 字元）"
-                                    className="form-input"
-                                />
-                                <div className="alert alert-warning" style={{ marginTop: 8, marginBottom: 0 }}>
-                                    <AlertTriangle size={16} style={{ flexShrink: 0 }} />
-                                    <span>
-                                        此為唯一驗證入口。如遺失請 email 洽研究者變更：
-                                        <a href="mailto:drhhtang@gapps.ntust.edu.tw" style={{ color: '#b45309', fontWeight: 500 }}>
-                                            drhhtang@gapps.ntust.edu.tw
-                                        </a>
-                                    </span>
-                                </div>
-                            </div>
-
-                            <div className="form-group">
-                                <label className="form-label">確認密碼 *</label>
-                                <input type="password" value={formData.confirm_password}
-                                    onChange={e => handleChange('confirm_password', e.target.value)}
-                                    placeholder="再次輸入驗證密碼" className="form-input" />
-                            </div>
 
                             <div className="form-row">
                                 <div className="form-group" style={{ flex: 1 }}>

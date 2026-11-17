@@ -1,18 +1,12 @@
 /**
  * POST /api/admin/reset-password
- * Admin resets a user's password to a default value.
+ * Admin resets a user's password to a random temporary password (Supabase Auth).
+ * The temporary password is returned once so the admin can hand it to the user.
  * Sets must_change_password = true so user is forced to change on next login.
+ * 註：管理員身分目前仍用前端送來的 adminId 判斷，改成伺服器端驗證屬於第 2、3 項。
  */
-import { createClient } from '@supabase/supabase-js'
-
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
-const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY
-
-const supabaseAdmin = createClient(supabaseUrl, serviceRoleKey, {
-    auth: { persistSession: false }
-})
-
-const DEFAULT_PASSWORD = '0000'
+import { supabaseAdmin } from '../../../lib/serverAuth'
+import { generateTempPassword } from '../../../lib/tempPassword'
 
 export default async function handler(req, res) {
     if (req.method !== 'POST') {
@@ -53,22 +47,33 @@ export default async function handler(req, res) {
             return res.status(403).json({ error: '無法重設系統管理員的密碼' })
         }
 
-        // Reset password and set flag
+        // 在 Supabase Auth 設定隨機臨時密碼（users.id 和 Auth 帳號 id 相同）
+        const tempPassword = generateTempPassword()
+        const { error: authError } = await supabaseAdmin.auth.admin.updateUserById(userId, {
+            password: tempPassword
+        })
+        if (authError) {
+            console.error('Error resetting auth password:', authError)
+            if (authError.code === 'user_not_found' || authError.status === 404) {
+                return res.status(404).json({ error: '這個帳號是改用 Supabase Auth 之前建立的，沒有登入帳號，請使用者重新註冊' })
+            }
+            return res.status(500).json({ error: '重設密碼失敗，請稍後再試' })
+        }
+
         const { error } = await supabaseAdmin
             .from('users')
-            .update({
-                verification_password: DEFAULT_PASSWORD,
-                must_change_password: true
-            })
+            .update({ must_change_password: true })
             .eq('id', userId)
 
         if (error) throw error
 
         return res.status(200).json({
-            message: `已將「${target.name}」的密碼重設為預設密碼（${DEFAULT_PASSWORD}），該使用者下次登入時須自行變更密碼。`
+            message: `已重設「${target.name}」的密碼，該使用者下次登入時須自行變更密碼。`,
+            // 只回傳這一次，伺服器不保存
+            tempPassword
         })
     } catch (err) {
         console.error('Error resetting password:', err)
-        return res.status(500).json({ error: err.message })
+        return res.status(500).json({ error: '重設密碼失敗，請稍後再試' })
     }
 }

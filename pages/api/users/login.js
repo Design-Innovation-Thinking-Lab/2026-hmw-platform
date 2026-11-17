@@ -1,64 +1,32 @@
-import { createClient } from '@supabase/supabase-js'
-
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
-const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY
-
-const supabaseAdmin = createClient(supabaseUrl, serviceRoleKey, {
-    auth: { persistSession: false }
-})
+/**
+ * POST /api/users/login
+ * 前端先用 Supabase Auth 登入（email＋密碼），再帶著 Supabase 的登入憑證呼叫這支 API：
+ *   Authorization: Bearer <access_token>
+ * 伺服器向 Supabase 驗證憑證，確認是誰之後才回傳這個人的基本資料。
+ * 這支 API 不收、也不比對密碼。
+ */
+import { supabaseAdmin, getAuthUser } from '../../../lib/serverAuth'
 
 export default async function handler(req, res) {
     if (req.method !== 'POST') {
         return res.status(405).json({ error: 'Method not allowed' })
     }
 
-    const { login_type, student_id, email, verification_password } = req.body
-
     try {
-        let user = null
+        const authUser = await getAuthUser(req)
+        if (!authUser) {
+            return res.status(401).json({ error: '登入已失效，請重新登入' })
+        }
 
-        if (login_type === 'student') {
-            // Login with student ID + verification password
-            if (!student_id) {
-                return res.status(400).json({ error: '請輸入學號' })
-            }
-            if (!verification_password) {
-                return res.status(400).json({ error: '請輸入驗證密碼' })
-            }
+        const { data: user, error } = await supabaseAdmin
+            .from('users')
+            .select('id, name, occupation, is_admin, must_change_password')
+            .eq('id', authUser.id)
+            .maybeSingle()
 
-            const { data, error } = await supabaseAdmin
-                .from('users')
-                .select('id, name, occupation, is_admin, must_change_password')
-                .eq('student_id', student_id.toUpperCase())
-                .eq('verification_password', verification_password)
-                .single()
-
-            if (error || !data) {
-                return res.status(401).json({ error: '學號或驗證密碼錯誤' })
-            }
-
-            user = data
-        } else {
-            // Login with email + verification password
-            if (!email) {
-                return res.status(400).json({ error: '請輸入 Email' })
-            }
-            if (!verification_password) {
-                return res.status(400).json({ error: '請輸入驗證密碼' })
-            }
-
-            const { data, error } = await supabaseAdmin
-                .from('users')
-                .select('id, name, occupation, is_admin, must_change_password')
-                .eq('email', email.toLowerCase().trim())
-                .eq('verification_password', verification_password)
-                .single()
-
-            if (error || !data) {
-                return res.status(401).json({ error: 'Email 或驗證密碼錯誤' })
-            }
-
-            user = data
+        if (error) throw error
+        if (!user) {
+            return res.status(404).json({ error: '找不到這個帳號的使用者資料，請洽管理員' })
         }
 
         // 不回傳敏感資訊
@@ -73,6 +41,6 @@ export default async function handler(req, res) {
         return res.status(200).json({ success: true, user: safeUser })
     } catch (err) {
         console.error('Login error:', err)
-        return res.status(500).json({ error: err.message })
+        return res.status(500).json({ error: '登入失敗，請稍後再試' })
     }
 }
