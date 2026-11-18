@@ -1,17 +1,10 @@
 /**
  * /api/analysis/quota - Check user's daily analysis quota status
  *
- * GET ?userId=<uuid>
+ * GET（查詢目前登入者自己的額度，是誰由登入憑證判斷）
  * Returns: { dailyQuota, usedToday, remaining }
  */
-import { createClient } from '@supabase/supabase-js'
-
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
-const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY
-
-const supabaseAdmin = createClient(supabaseUrl, serviceRoleKey, {
-    auth: { persistSession: false }
-})
+import { supabaseAdmin, requireUser } from '../../../lib/serverAuth'
 
 /**
  * Get the start of today in Asia/Taipei timezone as ISO string
@@ -29,11 +22,9 @@ export default async function handler(req, res) {
         return res.status(405).json({ error: 'Method not allowed' })
     }
 
-    const { userId } = req.query
-
-    if (!userId) {
-        return res.status(400).json({ error: 'Missing userId' })
-    }
+    const authed = await requireUser(req, res)
+    if (!authed) return
+    const userId = authed.id
 
     try {
         // Fetch user's quota setting

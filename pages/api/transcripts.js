@@ -1,14 +1,22 @@
-import { createClient } from '@supabase/supabase-js'
+import { supabaseAdmin, requireUser, requireRoomMember } from '../../lib/serverAuth'
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
-const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY
+// 逐字稿所屬的房間
+async function roomIdOfTranscript(id) {
+    const { data } = await supabaseAdmin
+        .from('room_transcripts')
+        .select('room_id')
+        .eq('id', id)
+        .maybeSingle()
+    return data?.room_id || null
+}
 
-const supabaseAdmin = createClient(supabaseUrl, serviceRoleKey, {
-    auth: { persistSession: false }
-})
-
+// 逐字稿是研究資料：一律要登入，而且是該房間的成員。
+// 房間成員都可以編輯、刪除房間裡的逐字稿（和 pages/room/[id].js 的畫面一致）。
 export default async function handler(req, res) {
     const { method } = req
+
+    const authed = await requireUser(req, res)
+    if (!authed) return
 
     // GET: Get transcripts for a room
     if (method === 'GET') {
@@ -17,6 +25,7 @@ export default async function handler(req, res) {
         if (!roomId) {
             return res.status(400).json({ error: 'Missing roomId' })
         }
+        if (!(await requireRoomMember(res, authed, roomId))) return
 
         try {
             const { data, error } = await supabaseAdmin
@@ -36,11 +45,13 @@ export default async function handler(req, res) {
 
     // POST: Upload a new transcript
     if (method === 'POST') {
-        const { room_id, uploader_id, file_name, content } = req.body
+        const { room_id, file_name, content } = req.body
+        const uploader_id = authed.id
 
-        if (!room_id || !uploader_id || !content) {
+        if (!room_id || !content) {
             return res.status(400).json({ error: '請提供完整資料' })
         }
+        if (!(await requireRoomMember(res, authed, room_id))) return
 
         try {
             const { data, error } = await supabaseAdmin
@@ -65,11 +76,14 @@ export default async function handler(req, res) {
 
     // DELETE: Delete a transcript
     if (method === 'DELETE') {
-        const { id, uploader_id } = req.body
+        const { id } = req.body
 
         if (!id) {
             return res.status(400).json({ error: 'Missing transcript ID' })
         }
+        const deleteRoomId = await roomIdOfTranscript(id)
+        if (!deleteRoomId) return res.status(404).json({ error: '找不到這份逐字稿' })
+        if (!(await requireRoomMember(res, authed, deleteRoomId))) return
 
         try {
             const { error } = await supabaseAdmin
@@ -93,6 +107,9 @@ export default async function handler(req, res) {
         if (!id) {
             return res.status(400).json({ error: 'Missing transcript ID' })
         }
+        const updateRoomId = await roomIdOfTranscript(id)
+        if (!updateRoomId) return res.status(404).json({ error: '找不到這份逐字稿' })
+        if (!(await requireRoomMember(res, authed, updateRoomId))) return
 
         try {
             const updateData = {}

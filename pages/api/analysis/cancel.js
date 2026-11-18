@@ -1,11 +1,4 @@
-import { createClient } from '@supabase/supabase-js'
-
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
-const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY
-
-const supabaseAdmin = createClient(supabaseUrl, serviceRoleKey, {
-    auth: { persistSession: false }
-})
+import { supabaseAdmin, requireUser, requireRoomMember, isAdminRole } from '../../../lib/serverAuth'
 
 export default async function handler(req, res) {
     if (req.method !== 'POST') {
@@ -16,6 +9,27 @@ export default async function handler(req, res) {
 
     if (!runId) {
         return res.status(400).json({ error: 'Missing runId' })
+    }
+
+    // 取消分析：要是這個分析所屬房間的成員（沒有房間的分析只有管理員可以取消）
+    const authed = await requireUser(req, res)
+    if (!authed) return
+
+    const { data: target } = await supabaseAdmin
+        .from('analysis_runs')
+        .select('id, room_id')
+        .eq('id', runId)
+        .maybeSingle()
+    if (!target) {
+        return res.status(404).json({ error: '找不到這個分析' })
+    }
+    if (target.room_id) {
+        if (roomId && roomId !== target.room_id) {
+            return res.status(400).json({ error: 'roomId 和分析不符' })
+        }
+        if (!(await requireRoomMember(res, authed, target.room_id))) return
+    } else if (!isAdminRole(authed.role)) {
+        return res.status(403).json({ error: '權限不足' })
     }
 
     try {

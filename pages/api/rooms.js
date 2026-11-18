@@ -1,27 +1,26 @@
-import { createClient } from '@supabase/supabase-js'
-
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
-const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY
-
-const supabaseAdmin = createClient(supabaseUrl, serviceRoleKey, {
-    auth: { persistSession: false }
-})
+import { supabaseAdmin, requireUser } from '../../lib/serverAuth'
 
 // Generate random 8-digit room code
 function generateRoomCode() {
     return Math.random().toString().slice(2, 10).padEnd(8, '0')
 }
 
+// 是誰由登入憑證判斷（lib/serverAuth），不讀前端送來的 userId／creator_id／user_id。
 export default async function handler(req, res) {
     const { method } = req
 
+    const authed = await requireUser(req, res)
+    if (!authed) return
+
     // GET: Get room by code or list user's rooms
     if (method === 'GET') {
-        const { code, userId } = req.query
+        const { code } = req.query
+        const userId = authed.id
 
         try {
             if (code) {
-                // Get single room by code
+                // Get single room by code（房間代碼就是邀請碼，登入的人都可以查；
+                // 逐字稿、結果等內容另外要求是房間成員）
                 const { data, error } = await supabaseAdmin
                     .from('research_rooms')
                     .select('*, users(name)')
@@ -32,7 +31,7 @@ export default async function handler(req, res) {
                 return res.status(200).json({ room: data })
             }
 
-            if (userId) {
+            {
                 // Get rooms user is a member of
                 const { data: memberRooms, error: memberError } = await supabaseAdmin
                     .from('room_members')
@@ -65,8 +64,6 @@ export default async function handler(req, res) {
 
                 return res.status(200).json({ rooms })
             }
-
-            return res.status(400).json({ error: 'Missing code or userId' })
         } catch (err) {
             console.error('Error fetching room:', err)
             return res.status(500).json({ error: err.message })
@@ -87,11 +84,11 @@ export default async function handler(req, res) {
                     team_size,
                     min_votes,
                     max_votes,
-                    creator_id,
                     project_id
                 } = data
+                const creator_id = authed.id
 
-                if (!name || !research_topic || !research_purpose || !creator_id) {
+                if (!name || !research_topic || !research_purpose) {
                     return res.status(400).json({ error: '請填寫所有必填欄位' })
                 }
 
@@ -160,9 +157,10 @@ export default async function handler(req, res) {
 
             // Join existing room
             if (action === 'join') {
-                const { room_code, user_id } = data
+                const { room_code } = data
+                const user_id = authed.id
 
-                if (!room_code || !user_id) {
+                if (!room_code) {
                     return res.status(400).json({ error: '請輸入房間代碼' })
                 }
 

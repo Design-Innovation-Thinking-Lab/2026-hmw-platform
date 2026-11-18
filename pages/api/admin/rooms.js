@@ -1,16 +1,13 @@
-import { createClient } from '@supabase/supabase-js'
-
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
-const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY
-
-const supabaseAdmin = createClient(supabaseUrl, serviceRoleKey, {
-    auth: { persistSession: false }
-})
+import { supabaseAdmin, requirePermission } from '../../../lib/serverAuth'
 
 export default async function handler(req, res) {
     if (req.method !== 'GET') {
         return res.status(405).json({ error: 'Method not allowed' })
     }
+
+    // 後台「分析結果」頁的房間下拉選單：需要 view_results
+    const authed = await requirePermission(req, res, 'view_results')
+    if (!authed) return
 
     try {
         const { data: rooms, error } = await supabaseAdmin

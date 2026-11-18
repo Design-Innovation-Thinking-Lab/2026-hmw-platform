@@ -1,36 +1,19 @@
-import { createClient } from '@supabase/supabase-js'
+import { supabaseAdmin, requireUser, getEffectivePermissions } from '../../lib/serverAuth'
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
-const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY
-
-const supabaseAdmin = createClient(supabaseUrl, serviceRoleKey, {
-    auth: { persistSession: false }
-})
-
+// 是誰、什麼角色一律由登入憑證判斷（lib/serverAuth），不讀前端送來的 userId／userRole。
 export default async function handler(req, res) {
     const { method } = req
 
+    const authed = await requireUser(req, res)
+    if (!authed) return
+    const userId = authed.id
+    const role = authed.role
+
     // GET: List projects with role-based filtering
     if (method === 'GET') {
-        const { userId, userRole } = req.query
-
         try {
-            // Fetch user role if not provided
-            let role = userRole
-            let userDbPermissions = {}
-            if (userId && !role) {
-                const { data: user } = await supabaseAdmin
-                    .from('users')
-                    .select('role, permissions')
-                    .eq('id', userId)
-                    .single()
-                role = user?.role || 'user'
-                userDbPermissions = user?.permissions || {}
-            }
-
             const isAdmin = ['system_admin', 'platform_manager'].includes(role)
-            const hasViewResults = isAdmin || (role === 'backend_user' && !!userDbPermissions.view_results)
-            const hasManageModes = isAdmin || (role === 'backend_user' && userId)
+            const hasViewResults = getEffectivePermissions(authed).view_results
 
             let query = supabaseAdmin
                 .from('projects')
@@ -41,7 +24,7 @@ export default async function handler(req, res) {
             if (isAdmin || hasViewResults) {
                 // system_admin / platform_manager / backend_user with view_results sees all projects
                 // (view_results users need all projects visible to query any room's results)
-            } else if (role === 'backend_user' && userId) {
+            } else if (role === 'backend_user') {
                 // backend_user without view_results sees their own projects only
                 query = query.eq('owner_id', userId)
             } else {
@@ -57,7 +40,7 @@ export default async function handler(req, res) {
             const projectsWithCount = projects.map(p => ({
                 ...p,
                 step_count: p.analysis_flow_steps?.[0]?.count || 0,
-                is_owner: userId && p.owner_id === userId
+                is_owner: p.owner_id === userId
             }))
 
             return res.status(200).json({ projects: projectsWithCount })
@@ -68,27 +51,16 @@ export default async function handler(req, res) {
 
     // POST: Create a new project (requires mode_manager or admin role)
     if (method === 'POST') {
-        const { name, description, userId, userRole } = req.body
+        const { name, description } = req.body
 
         if (!name || !name.trim()) {
             return res.status(400).json({ error: '分析模式名稱為必填' })
         }
 
         try {
-            // Check user role
-            let role = userRole
-            if (userId && !role) {
-                const { data: user } = await supabaseAdmin
-                    .from('users')
-                    .select('role, permissions')
-                    .eq('id', userId)
-                    .single()
-                role = user?.role || 'user'
-            }
-
             // system_admin, platform_manager, backend_user (with manage_modes) can create
-            const canCreate = ['system_admin', 'platform_manager'].includes(role) ||
-                (role === 'backend_user') // backend_user permission checked at page level
+            // 原本 backend_user 的 manage_modes 只在頁面上檢查，改成伺服器端檢查
+            const canCreate = getEffectivePermissions(authed).manage_modes
             if (!canCreate) {
                 return res.status(403).json({ error: '權限不足：只有管理員或授權的後台使用者可以建立分析模式' })
             }
@@ -113,24 +85,13 @@ export default async function handler(req, res) {
 
     // PUT: Update project (requires ownership or admin)
     if (method === 'PUT') {
-        const { projectId, isDefault, name, description, isPublic, userId, userRole } = req.body
+        const { projectId, isDefault, name, description, isPublic } = req.body
 
         if (!projectId) {
             return res.status(400).json({ error: 'projectId is required' })
         }
 
         try {
-            // Check user role and ownership
-            let role = userRole
-            if (userId && !role) {
-                const { data: user } = await supabaseAdmin
-                    .from('users')
-                    .select('role')
-                    .eq('id', userId)
-                    .single()
-                role = user?.role || 'user'
-            }
-
             // Check project ownership
             const { data: existingProject } = await supabaseAdmin
                 .from('projects')
@@ -138,7 +99,7 @@ export default async function handler(req, res) {
                 .eq('id', projectId)
                 .single()
 
-            const isOwner = userId && existingProject?.owner_id === userId
+            const isOwner = !!existingProject && existingProject.owner_id === userId
             const isAdmin = ['system_admin', 'platform_manager'].includes(role)
 
             // Only owner or admin can edit
@@ -176,24 +137,13 @@ export default async function handler(req, res) {
 
     // DELETE: Delete a project (requires ownership or admin)
     if (method === 'DELETE') {
-        const { projectId, userId, userRole } = req.body
+        const { projectId } = req.body
 
         if (!projectId) {
             return res.status(400).json({ error: 'projectId is required' })
         }
 
         try {
-            // Check user role
-            let role = userRole
-            if (userId && !role) {
-                const { data: user } = await supabaseAdmin
-                    .from('users')
-                    .select('role')
-                    .eq('id', userId)
-                    .single()
-                role = user?.role || 'user'
-            }
-
             // Check project ownership
             const { data: project } = await supabaseAdmin
                 .from('projects')
@@ -201,7 +151,7 @@ export default async function handler(req, res) {
                 .eq('id', projectId)
                 .single()
 
-            const isOwner = userId && project?.owner_id === userId
+            const isOwner = !!project && project.owner_id === userId
             const isAdmin = ['system_admin', 'platform_manager'].includes(role)
 
             // Only owner or admin can delete

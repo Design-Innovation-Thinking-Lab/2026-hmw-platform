@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/router'
 import { CheckCircle, Search } from '../../components/icons'
+import { apiFetch } from '../../lib/apiFetch'
 
 // ── Helper: render a single completed-step card during analysis ──
 function LiveStepCard({ step }) {
@@ -459,7 +460,7 @@ export default function RoomPage() {
         setLoadingModes(true)
         try {
             const currentUserId = userId || localStorage.getItem('userId')
-            const res = await fetch(`/api/projects?userId=${currentUserId}`)
+            const res = await apiFetch('/api/projects')
             const data = await res.json()
             if (res.ok) {
                 setAnalysisModes(data.projects || [])
@@ -482,7 +483,7 @@ export default function RoomPage() {
 
     const fetchRoomData = async () => {
         try {
-            const res = await fetch(`/api/rooms?code=${roomId}`)
+            const res = await apiFetch(`/api/rooms?code=${roomId}`)
             const data = await res.json()
             if (res.ok) {
                 setRoom(data.room)
@@ -499,11 +500,11 @@ export default function RoomPage() {
     const fetchTranscripts = async () => {
         try {
             // Need to get room UUID first
-            const roomRes = await fetch(`/api/rooms?code=${roomId}`)
+            const roomRes = await apiFetch(`/api/rooms?code=${roomId}`)
             const roomData = await roomRes.json()
             if (!roomRes.ok) return
 
-            const res = await fetch(`/api/transcripts?roomId=${roomData.room.id}`)
+            const res = await apiFetch(`/api/transcripts?roomId=${roomData.room.id}`)
             const data = await res.json()
             if (res.ok) {
                 setTranscripts(data.transcripts || [])
@@ -522,7 +523,7 @@ export default function RoomPage() {
             if (runId) {
                 url += `&runId=${runId}`
             }
-            const res = await fetch(url)
+            const res = await apiFetch(url)
             const data = await res.json()
             if (res.ok) {
                 setHmwResults(data.hmwItems || [])
@@ -557,7 +558,7 @@ export default function RoomPage() {
         )
 
         try {
-            const res = await fetch(`/api/rooms/results?roomId=${room.id}`, {
+            const res = await apiFetch(`/api/rooms/results?roomId=${room.id}`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
@@ -596,7 +597,7 @@ export default function RoomPage() {
 
         const pollProgress = async () => {
             try {
-                const res = await fetch(`/api/analysis/progress?roomId=${room.id}`)
+                const res = await apiFetch(`/api/analysis/progress?roomId=${room.id}`)
                 const data = await res.json()
                 if (res.ok && data.progress) {
                     setAnalysisProgress({
@@ -656,7 +657,7 @@ export default function RoomPage() {
                 } else {
                     const formData = new FormData()
                     formData.append('file', pf.file)
-                    const res = await fetch('/api/parse-file', { method: 'POST', body: formData })
+                    const res = await apiFetch('/api/parse-file', { method: 'POST', body: formData })
                     const data = await res.json()
                     if (!res.ok) throw new Error(data.error || '檔案解析失敗')
                     text = data.text
@@ -723,12 +724,11 @@ export default function RoomPage() {
         let failCount = 0
         for (const pf of readyFiles) {
             try {
-                const res = await fetch('/api/transcripts', {
+                const res = await apiFetch('/api/transcripts', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
                         room_id: room.id,
-                        uploader_id: userId,
                         file_name: pf.displayName || `逐字稿 ${transcripts.length + successCount + 1}`,
                         content: pf.content
                     })
@@ -763,12 +763,11 @@ export default function RoomPage() {
         setSuccess(null)
 
         try {
-            const res = await fetch('/api/analysis/start', {
+            const res = await apiFetch('/api/analysis/start', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     roomId: room.id,
-                    initiatorId: userId,
                     projectId: pendingModeId
                 })
             })
@@ -797,7 +796,7 @@ export default function RoomPage() {
         setShowCancelConfirm(false)
 
         try {
-            const res = await fetch('/api/analysis/cancel', {
+            const res = await apiFetch('/api/analysis/cancel', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
@@ -833,7 +832,7 @@ export default function RoomPage() {
             setError(null)
 
             // Reset room status first
-            const resetRes = await fetch('/api/debug/fix-run', {
+            const resetRes = await apiFetch('/api/debug/fix-run', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
@@ -849,12 +848,11 @@ export default function RoomPage() {
             // Start new analysis
             // Use pendingModeId (the user's current modal selection). selectedModeId
             // is updated via async setState and would still hold the stale value here.
-            const res = await fetch('/api/analysis/start', {
+            const res = await apiFetch('/api/analysis/start', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     roomId: room.id,
-                    initiatorId: userId,
                     projectId: pendingModeId
                 })
             })
@@ -878,7 +876,7 @@ export default function RoomPage() {
         if (!confirm('確定要刪除此逐字稿嗎？')) return
 
         try {
-            const res = await fetch('/api/transcripts', {
+            const res = await apiFetch('/api/transcripts', {
                 method: 'DELETE',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ id: transcriptId })
@@ -909,7 +907,7 @@ export default function RoomPage() {
 
         setSaving(true)
         try {
-            const res = await fetch('/api/transcripts', {
+            const res = await apiFetch('/api/transcripts', {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({

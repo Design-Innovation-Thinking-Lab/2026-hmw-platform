@@ -10,6 +10,7 @@ import {
     AlertTriangle,
     ChevronLeft
 } from '../../components/icons'
+import { apiFetch } from '../../lib/apiFetch'
 
 const ROLE_NAMES = {
     system_admin: '系統管理員',
@@ -78,10 +79,10 @@ export default function AdminUsersPage() {
             }
 
             try {
-                const res = await fetch('/api/admin/users', {
+                const res = await apiFetch('/api/admin/users', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ userId })
+                    body: JSON.stringify({})
                 })
                 const data = await res.json()
 
@@ -112,7 +113,7 @@ export default function AdminUsersPage() {
     async function fetchUsers() {
         setLoading(true)
         try {
-            const res = await fetch('/api/admin/users?includeUsage=true')
+            const res = await apiFetch('/api/admin/users?includeUsage=true')
             const data = await res.json()
             if (!res.ok) throw new Error(data.error)
             setUsers(data.users || [])
@@ -128,10 +129,10 @@ export default function AdminUsersPage() {
         setChangingRole(userId)
         setError(null)
         try {
-            const res = await fetch('/api/admin/users', {
+            const res = await apiFetch('/api/admin/users', {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ adminId: currentUserId, userId, newRole })
+                body: JSON.stringify({ userId, newRole })
             })
             const data = await res.json()
             if (!res.ok) throw new Error(data.error)
@@ -156,10 +157,10 @@ export default function AdminUsersPage() {
         }
 
         try {
-            const res = await fetch('/api/admin/users', {
+            const res = await apiFetch('/api/admin/users', {
                 method: 'PATCH',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ adminId: currentUserId, userId, permissions: updated })
+                body: JSON.stringify({ userId, permissions: updated })
             })
             const data = await res.json()
             if (!res.ok) throw new Error(data.error)
@@ -180,10 +181,10 @@ export default function AdminUsersPage() {
         setResettingPassword(userId)
         setError(null)
         try {
-            const res = await fetch('/api/admin/reset-password', {
+            const res = await apiFetch('/api/admin/reset-password', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ adminId: currentUserId, userId })
+                body: JSON.stringify({ userId })
             })
             const data = await res.json()
             if (!res.ok) throw new Error(data.error)
@@ -207,11 +208,10 @@ export default function AdminUsersPage() {
         setSavingQuota(true)
         setError(null)
         try {
-            const res = await fetch('/api/admin/users', {
+            const res = await apiFetch('/api/admin/users', {
                 method: 'PATCH',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                    adminId: currentUserId,
                     userId,
                     dailyAnalysisQuota: parseInt(quotaValue)
                 })

@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/router'
 import { supabase } from '../../lib/supabaseClient'
+import { apiFetch } from '../../lib/apiFetch'
 
 export default function AdminLoginPage() {
     const router = useRouter()
@@ -25,10 +26,10 @@ export default function AdminLoginPage() {
     async function checkAdminStatus(userId, userName) {
         setLoading(true)
         try {
-            const res = await fetch('/api/admin/users', {
+            const res = await apiFetch('/api/admin/users', {
                 method: 'POST',  // Fixed: Changed from PUT to POST for permission check
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ userId })
+                body: JSON.stringify({})
             })
             const data = await res.json()
 

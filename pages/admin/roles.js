@@ -8,6 +8,7 @@ import {
     Edit,
     Trash2
 } from '../../components/icons'
+import { apiFetch } from '../../lib/apiFetch'
 
 export default function RolesAdminPage() {
     const router = useRouter()
@@ -61,7 +62,7 @@ export default function RolesAdminPage() {
         setLoading(true)
         setError(null)
         try {
-            const res = await fetch('/api/roles')
+            const res = await apiFetch('/api/roles')
             const data = await res.json()
             if (!res.ok) throw new Error(data.error || 'Failed to fetch')
             setRoles(data.roles || [])
@@ -119,7 +120,7 @@ export default function RolesAdminPage() {
                 roleData.id = editingRole.id
             }
 
-            const res = await fetch('/api/roles', {
+            const res = await apiFetch('/api/roles', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
@@ -146,7 +147,7 @@ export default function RolesAdminPage() {
         }
 
         try {
-            const res = await fetch('/api/roles', {
+            const res = await apiFetch('/api/roles', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({

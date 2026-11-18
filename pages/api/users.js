@@ -1,4 +1,4 @@
-import { supabaseAdmin } from '../../lib/serverAuth'
+import { supabaseAdmin, requireUser, isAdminRole } from '../../lib/serverAuth'
 import { MIN_PASSWORD_LENGTH } from '../../lib/password'
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
@@ -146,12 +146,14 @@ export default async function handler(req, res) {
     }
 
 
-    // GET: Get user by ID
+    // GET: Get user by ID（只能查自己；管理員可以查別人）
     if (method === 'GET') {
-        const { id } = req.query
+        const authed = await requireUser(req, res)
+        if (!authed) return
 
-        if (!id) {
-            return res.status(400).json({ error: 'Missing user ID' })
+        const id = req.query.id || authed.id
+        if (id !== authed.id && !isAdminRole(authed.role)) {
+            return res.status(403).json({ error: '權限不足' })
         }
 
         try {

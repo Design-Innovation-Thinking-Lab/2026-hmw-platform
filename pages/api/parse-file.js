@@ -6,6 +6,7 @@ import formidable from 'formidable'
 import fs from 'fs'
 import mammoth from 'mammoth'
 import pdfParse from 'pdf-parse'
+import { requireUser } from '../../lib/serverAuth'
 
 export const config = {
     api: {
@@ -17,6 +18,10 @@ export default async function handler(req, res) {
     if (req.method !== 'POST') {
         return res.status(405).json({ error: 'Method not allowed' })
     }
+
+    // 上傳的是逐字稿：要登入才能解析
+    const authed = await requireUser(req, res)
+    if (!authed) return
 
     try {
         const form = formidable({
