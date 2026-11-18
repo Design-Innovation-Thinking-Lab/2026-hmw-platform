@@ -1,11 +1,4 @@
-import { createClient } from '@supabase/supabase-js'
-
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
-const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY
-
-const supabaseAdmin = createClient(supabaseUrl, serviceRoleKey, {
-    auth: { persistSession: false }
-})
+import { supabaseAdmin, requireUser, requireRoomMember, getEffectivePermissions } from '../../../lib/serverAuth'
 
 export default async function handler(req, res) {
     if (req.method !== 'GET') {
@@ -14,19 +7,29 @@ export default async function handler(req, res) {
 
     const { runId, roomId } = req.query
 
+    // 房間的分析進度只給房間成員看；沒有房間的分析（舊的 project 流程）需要 view_results
+    const authed = await requireUser(req, res)
+    if (!authed) return
+
     try {
         let run = null
 
         if (runId) {
             const { data, error } = await supabaseAdmin
                 .from('analysis_runs')
-                .select('id, status, meta, project_id, created_at, started_at, finished_at')
+                .select('id, status, meta, project_id, room_id, created_at, started_at, finished_at')
                 .eq('id', runId)
                 .single()
 
             if (error) throw error
+            if (data.room_id) {
+                if (!(await requireRoomMember(res, authed, data.room_id))) return
+            } else if (!getEffectivePermissions(authed).view_results) {
+                return res.status(403).json({ error: '權限不足' })
+            }
             run = data
         } else if (roomId) {
+            if (!(await requireRoomMember(res, authed, roomId))) return
             const { data: room } = await supabaseAdmin
                 .from('research_rooms')
                 .select('current_analysis_run_id, analysis_status')

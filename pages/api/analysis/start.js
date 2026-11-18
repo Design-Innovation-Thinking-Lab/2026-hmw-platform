@@ -1,11 +1,4 @@
-import { createClient } from '@supabase/supabase-js'
-
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
-const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY
-
-const supabaseAdmin = createClient(supabaseUrl, serviceRoleKey, {
-    auth: { persistSession: false }
-})
+import { supabaseAdmin, requireUser, requireRoomMember, isAdminRole } from '../../../lib/serverAuth'
 
 /**
  * Get the start of today in Asia/Taipei timezone as ISO string
@@ -21,43 +14,53 @@ export default async function handler(req, res) {
         return res.status(405).json({ error: 'Method not allowed' })
     }
 
-    const { projectId, roomId, initiatorId } = req.body
+    // 會觸發 LLM 分析（花研究室的錢）：一定要登入，發起人由登入憑證判斷，不讀 body 的 initiatorId
+    const authed = await requireUser(req, res)
+    if (!authed) return
+    const initiatorId = authed.id
+
+    const { projectId, roomId } = req.body
 
     // Either projectId or roomId is required
     if (!projectId && !roomId) {
         return res.status(400).json({ error: 'Missing projectId or roomId' })
     }
 
+    if (roomId) {
+        // 房間的分析：要是這個房間的成員
+        if (!(await requireRoomMember(res, authed, roomId))) return
+    } else if (!isAdminRole(authed.role)) {
+        // 沒有房間、直接對 project 跑分析：前端沒有用到，只開放給管理員
+        return res.status(403).json({ error: '權限不足' })
+    }
+
     try {
         // --- Daily Quota Check ---
-        if (initiatorId) {
-            const { data: user, error: userError } = await supabaseAdmin
-                .from('users')
-                .select('daily_analysis_quota, role')
-                .eq('id', initiatorId)
-                .single()
+        // 查不到額度時不放行（原本查詢出錯會略過檢查）
+        // 使用者資料已由 requireUser 讀出（authed.role、authed.daily_analysis_quota）
+        if (authed.role !== 'system_admin') {
+            const dailyQuota = authed.daily_analysis_quota ?? 3
 
-            if (!userError && user && user.role !== 'system_admin') {
-                const dailyQuota = user.daily_analysis_quota ?? 3
+            const todayStart = getTodayStartTaipei()
+            const { count, error: countError } = await supabaseAdmin
+                .from('analysis_runs')
+                .select('*', { count: 'exact', head: true })
+                .eq('initiator_id', initiatorId)
+                .gte('created_at', todayStart)
 
-                const todayStart = getTodayStartTaipei()
-                const { count, error: countError } = await supabaseAdmin
-                    .from('analysis_runs')
-                    .select('*', { count: 'exact', head: true })
-                    .eq('initiator_id', initiatorId)
-                    .gte('created_at', todayStart)
+            if (countError) {
+                console.error('Error checking quota:', countError)
+                return res.status(500).json({ error: '無法確認今日分析額度，請稍後再試' })
+            }
 
-                if (!countError) {
-                    const usedToday = count || 0
-                    if (usedToday >= dailyQuota) {
-                        return res.status(429).json({
-                            error: `今日分析次數已達上限（${dailyQuota} 次/天）。如需更多次數，請聯繫管理員。`,
-                            quotaExceeded: true,
-                            dailyQuota,
-                            usedToday
-                        })
-                    }
-                }
+            const usedToday = count || 0
+            if (usedToday >= dailyQuota) {
+                return res.status(429).json({
+                    error: `今日分析次數已達上限（${dailyQuota} 次/天）。如需更多次數，請聯繫管理員。`,
+                    quotaExceeded: true,
+                    dailyQuota,
+                    usedToday
+                })
             }
         }
         // --- End Quota Check ---

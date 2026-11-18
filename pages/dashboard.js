@@ -15,6 +15,7 @@ import {
     User,
     LogIn
 } from '../components/icons'
+import { apiFetch } from '../lib/apiFetch'
 
 export default function DashboardPage() {
     const router = useRouter()
@@ -60,7 +61,7 @@ export default function DashboardPage() {
     const fetchProjects = async (uid) => {
         setLoadingProjects(true)
         try {
-            const res = await fetch(`/api/projects?userId=${uid}`)
+            const res = await apiFetch('/api/projects')
             const data = await res.json()
             if (res.ok) setProjects(data.projects || [])
         } catch (err) {
@@ -72,7 +73,7 @@ export default function DashboardPage() {
 
     const fetchRooms = async (uid) => {
         try {
-            const res = await fetch(`/api/rooms?userId=${uid}`)
+            const res = await apiFetch('/api/rooms')
             const data = await res.json()
             if (res.ok) setRooms(data.rooms || [])
         } catch (err) {
@@ -93,10 +94,10 @@ export default function DashboardPage() {
         }
 
         try {
-            const res = await fetch('/api/rooms', {
+            const res = await apiFetch('/api/rooms', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ action: 'create', creator_id: userId, ...createForm })
+                body: JSON.stringify({ action: 'create', ...createForm })
             })
 
             const data = await res.json()
@@ -126,10 +127,10 @@ export default function DashboardPage() {
         }
 
         try {
-            const res = await fetch('/api/rooms', {
+            const res = await apiFetch('/api/rooms', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ action: 'join', room_code: joinCode, user_id: userId })
+                body: JSON.stringify({ action: 'join', room_code: joinCode })
             })
 
             const data = await res.json()

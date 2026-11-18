@@ -1,14 +1,21 @@
-import { createClient } from '@supabase/supabase-js'
+import { supabaseAdmin, requireUser, canEditProject } from '../../../lib/serverAuth'
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
-const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY
-
-const supabaseAdmin = createClient(supabaseUrl, serviceRoleKey, {
-    auth: { persistSession: false }
-})
+// 附件屬於某個分析步驟；能不能讀寫，看能不能修改那個步驟所屬的分析模式
+async function canEditStep(user, stepId) {
+    if (!stepId) return false
+    const { data: step } = await supabaseAdmin
+        .from('analysis_flow_steps')
+        .select('project_id')
+        .eq('id', stepId)
+        .maybeSingle()
+    return !!step && canEditProject(user, step.project_id)
+}
 
 export default async function handler(req, res) {
     const { method } = req
+
+    const authed = await requireUser(req, res)
+    if (!authed) return
 
     // GET: Fetch all attachments for a specific step
     if (method === 'GET') {
@@ -16,6 +23,10 @@ export default async function handler(req, res) {
 
         if (!stepId) {
             return res.status(400).json({ error: 'Missing stepId' })
+        }
+
+        if (!(await canEditStep(authed, stepId))) {
+            return res.status(403).json({ error: '權限不足' })
         }
 
         try {
@@ -40,6 +51,10 @@ export default async function handler(req, res) {
 
         if (!stepId || !fileName || !storageUrl) {
             return res.status(400).json({ error: 'Missing required fields: stepId, fileName, storageUrl' })
+        }
+
+        if (!(await canEditStep(authed, stepId))) {
+            return res.status(403).json({ error: '權限不足' })
         }
 
         try {
@@ -81,11 +96,15 @@ export default async function handler(req, res) {
             // 1. Get attachment info before deletion
             const { data: attachment, error: fetchError } = await supabaseAdmin
                 .from('analysis_step_attachments')
-                .select('storage_path')
+                .select('storage_path, step_id')
                 .eq('id', attachmentId)
                 .single()
 
             if (fetchError) throw fetchError
+
+            if (!(await canEditStep(authed, attachment?.step_id))) {
+                return res.status(403).json({ error: '權限不足' })
+            }
 
             // 2. Delete from storage
             if (attachment?.storage_path) {

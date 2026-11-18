@@ -3,9 +3,9 @@
  * Admin resets a user's password to a random temporary password (Supabase Auth).
  * The temporary password is returned once so the admin can hand it to the user.
  * Sets must_change_password = true so user is forced to change on next login.
- * 註：管理員身分目前仍用前端送來的 adminId 判斷，改成伺服器端驗證屬於第 2、3 項。
+ * 管理員身分由登入憑證判斷（lib/serverAuth），不讀前端送來的 adminId。
  */
-import { supabaseAdmin } from '../../../lib/serverAuth'
+import { supabaseAdmin, requireAdmin } from '../../../lib/serverAuth'
 import { generateTempPassword } from '../../../lib/tempPassword'
 
 export default async function handler(req, res) {
@@ -13,23 +13,16 @@ export default async function handler(req, res) {
         return res.status(405).json({ error: 'Method not allowed' })
     }
 
-    const { adminId, userId } = req.body
+    const admin = await requireAdmin(req, res)
+    if (!admin) return
 
-    if (!adminId || !userId) {
-        return res.status(400).json({ error: 'adminId and userId are required' })
+    const { userId } = req.body
+
+    if (!userId) {
+        return res.status(400).json({ error: 'userId is required' })
     }
 
     try {
-        // Verify requester has permission
-        const { data: admin } = await supabaseAdmin
-            .from('users')
-            .select('role')
-            .eq('id', adminId)
-            .single()
-
-        if (!['system_admin', 'platform_manager'].includes(admin?.role)) {
-            return res.status(403).json({ error: '權限不足：只有系統管理員或平台管理者可以重設密碼' })
-        }
 
         // Get target user info
         const { data: target } = await supabaseAdmin

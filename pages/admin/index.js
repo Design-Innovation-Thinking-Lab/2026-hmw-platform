@@ -12,6 +12,7 @@ import {
     Trash2,
     AlertTriangle
 } from '../../components/icons'
+import { apiFetch } from '../../lib/apiFetch'
 
 export default function AdminIndexPage() {
     const router = useRouter()
@@ -74,7 +75,7 @@ export default function AdminIndexPage() {
     async function fetchProjects() {
         setLoading(true)
         try {
-            const res = await fetch(`/api/projects?isAdmin=true&userId=${userId}`)
+            const res = await apiFetch('/api/projects')
             const data = await res.json()
             if (!res.ok) throw new Error(data.error)
             setProjects(data.projects || [])
@@ -95,13 +96,12 @@ export default function AdminIndexPage() {
         setCreating(true)
         setError(null)
         try {
-            const res = await fetch('/api/projects', {
+            const res = await apiFetch('/api/projects', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     name: newName,
-                    description: newDesc,
-                    userId: userId  // Fixed: changed from createdBy to userId for permission check
+                    description: newDesc
                 })
             })
             const data = await res.json()
@@ -139,12 +139,11 @@ export default function AdminIndexPage() {
         setDeleting(true)
         setError(null)
         try {
-            const res = await fetch('/api/projects', {
+            const res = await apiFetch('/api/projects', {
                 method: 'DELETE',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                    projectId: projectToDelete.id,
-                    userId: userId
+                    projectId: projectToDelete.id
                 })
             })
             const data = await res.json()
@@ -165,13 +164,12 @@ export default function AdminIndexPage() {
         setTogglingDefault(project.id)
         setError(null)
         try {
-            const res = await fetch('/api/projects', {
+            const res = await apiFetch('/api/projects', {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     projectId: project.id,
-                    isDefault: !project.is_default,
-                    userId: userId
+                    isDefault: !project.is_default
                 })
             })
             const data = await res.json()
