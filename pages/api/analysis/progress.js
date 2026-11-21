@@ -1,16 +1,12 @@
-import { createClient } from '@supabase/supabase-js'
-
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
-const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY
-
-const supabaseAdmin = createClient(supabaseUrl, serviceRoleKey, {
-    auth: { persistSession: false }
-})
+import { requireUser, supabaseAdmin, canViewRoom, isAdmin } from '../../../lib/auth'
 
 export default async function handler(req, res) {
     if (req.method !== 'GET') {
         return res.status(405).json({ error: 'Method not allowed' })
     }
+
+    const user = await requireUser(req, res)
+    if (!user) return
 
     const { runId, roomId } = req.query
 
@@ -20,13 +16,24 @@ export default async function handler(req, res) {
         if (runId) {
             const { data, error } = await supabaseAdmin
                 .from('analysis_runs')
-                .select('id, status, meta, project_id, created_at, started_at, finished_at')
+                .select('id, status, meta, project_id, room_id, initiator_id, created_at, started_at, finished_at')
                 .eq('id', runId)
                 .single()
 
             if (error) throw error
+
+            const allowed = data.room_id
+                ? await canViewRoom(user, data.room_id)
+                : (data.initiator_id === user.id || isAdmin(user) || user.perms.view_results)
+            if (!allowed) {
+                return res.status(403).json({ error: '權限不足' })
+            }
             run = data
         } else if (roomId) {
+            if (!(await canViewRoom(user, roomId))) {
+                return res.status(403).json({ error: '權限不足' })
+            }
+
             const { data: room } = await supabaseAdmin
                 .from('research_rooms')
                 .select('current_analysis_run_id, analysis_status')

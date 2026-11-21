@@ -1,5 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/router'
+import { apiFetch } from '../../lib/apiFetch'
+import { logout } from '../../lib/session'
 
 export default function AdminLoginPage() {
     const router = useRouter()
@@ -24,14 +26,14 @@ export default function AdminLoginPage() {
     async function checkAdminStatus(userId, userName) {
         setLoading(true)
         try {
-            const res = await fetch('/api/admin/users', {
+            const res = await apiFetch('/api/admin/users', {
                 method: 'POST',  // Fixed: Changed from PUT to POST for permission check
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ userId })
+                body: JSON.stringify({})
             })
             const data = await res.json()
 
-            if (data.hasAdminAccess) {
+            if (res.ok && data.hasAdminAccess) {
                 // User has backend access, grant access and store permissions
                 localStorage.setItem('adminAuth', 'true')
                 localStorage.setItem('adminAuthTime', Date.now().toString())
@@ -51,10 +53,8 @@ export default function AdminLoginPage() {
         }
     }
 
-    const handleLogoutAndRetry = () => {
-        localStorage.removeItem('userId')
-        localStorage.removeItem('userName')
-        localStorage.removeItem('adminAuth')
+    const handleLogoutAndRetry = async () => {
+        await logout()
         router.push('/login?returnUrl=/admin')
     }
 

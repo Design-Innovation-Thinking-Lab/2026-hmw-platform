@@ -3,14 +3,7 @@
  * Supports 4-tier role system: system_admin, platform_manager, backend_user, user
  * With per-feature permission control for backend_user
  */
-import { createClient } from '@supabase/supabase-js'
-
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
-const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY
-
-const supabaseAdmin = createClient(supabaseUrl, serviceRoleKey, {
-    auth: { persistSession: false }
-})
+import { requireUser, supabaseAdmin, isAdmin, hasBackendAccess } from '../../../lib/auth'
 
 const VALID_ROLES = ['system_admin', 'platform_manager', 'backend_user', 'user']
 const VALID_PERMISSIONS = ['manage_modes', 'manage_roles', 'view_results', 'manage_users']
@@ -51,8 +44,15 @@ function canAssignRole(requesterRole, newRole) {
 export default async function handler(req, res) {
     const { method } = req
 
+    // 每個操作都要登入；操作者一律是 session 裡的人（不採信 body 的 adminId / requesterId / userId）
+    const me = await requireUser(req, res)
+    if (!me) return
+
     // GET: List all users with full details
     if (method === 'GET') {
+        if (!isAdmin(me)) {
+            return res.status(403).json({ error: '權限不足' })
+        }
         const { includeUsage } = req.query
 
         try {
@@ -104,10 +104,11 @@ export default async function handler(req, res) {
 
     // PUT: Update user role
     if (method === 'PUT') {
-        const { adminId, userId, newRole } = req.body
+        const { userId, newRole } = req.body
+        const adminId = me.id
 
-        if (!adminId || !userId || !newRole) {
-            return res.status(400).json({ error: 'adminId, userId, and newRole are required' })
+        if (!userId || !newRole) {
+            return res.status(400).json({ error: 'userId and newRole are required' })
         }
 
         if (!VALID_ROLES.includes(newRole)) {
@@ -115,8 +116,7 @@ export default async function handler(req, res) {
         }
 
         try {
-            const { data: admin } = await supabaseAdmin
-                .from('users').select('role').eq('id', adminId).single()
+            const admin = me
 
             if (!canAssignRole(admin?.role, newRole)) {
                 return res.status(403).json({ error: '權限不足：您無法指派此角色' })
@@ -171,15 +171,14 @@ export default async function handler(req, res) {
 
     // PATCH: Update user permissions or daily quota
     if (method === 'PATCH') {
-        const { adminId, userId, permissions, dailyAnalysisQuota } = req.body
+        const { userId, permissions, dailyAnalysisQuota } = req.body
 
-        if (!adminId || !userId) {
-            return res.status(400).json({ error: 'adminId and userId are required' })
+        if (!userId) {
+            return res.status(400).json({ error: 'userId is required' })
         }
 
         try {
-            const { data: admin } = await supabaseAdmin
-                .from('users').select('role').eq('id', adminId).single()
+            const admin = me
 
             if (!['system_admin', 'platform_manager'].includes(admin?.role)) {
                 return res.status(403).json({ error: '權限不足' })
@@ -259,59 +258,31 @@ export default async function handler(req, res) {
         }
     }
 
-    // POST: Check user permissions
+    // POST: 查詢「自己」的後台權限（不接受查別人）
     if (method === 'POST') {
+        const role = me.role
+        return res.status(200).json({
+            hasAdminAccess: hasBackendAccess(me),
+            isAdmin: role === 'system_admin',
+            isPlatformManager: role === 'platform_manager',
+            isBackendUser: role === 'backend_user',
+            role,
+            userName: me.name,
+            permissions: me.perms,
+        })
+    }
+
+    // DELETE: Revoke permissions (set role back to 'user')
+    if (method === 'DELETE') {
         const { userId } = req.body
+        const requesterId = me.id
+        const requester = me
 
         if (!userId) {
             return res.status(400).json({ error: 'userId is required' })
         }
 
         try {
-            const { data: user, error } = await supabaseAdmin
-                .from('users')
-                .select('id, name, role, permissions')
-                .eq('id', userId)
-                .single()
-
-            if (error) throw error
-
-            const role = user?.role || 'user'
-            const isSystemAdmin = role === 'system_admin'
-            const isPlatformManager = role === 'platform_manager'
-            const isBackendUser = role === 'backend_user'
-            const permissions = user?.permissions || {}
-
-            return res.status(200).json({
-                hasAdminAccess: isSystemAdmin || isPlatformManager || isBackendUser,
-                isAdmin: isSystemAdmin,
-                isPlatformManager,
-                isBackendUser,
-                role,
-                userName: user?.name,
-                permissions: {
-                    manage_modes: isSystemAdmin || isPlatformManager || (isBackendUser && !!permissions.manage_modes),
-                    manage_roles: isSystemAdmin || isPlatformManager || (isBackendUser && !!permissions.manage_roles),
-                    view_results: isSystemAdmin || isPlatformManager || (isBackendUser && !!permissions.view_results),
-                    manage_users: isSystemAdmin, // 只有系統管理員可以管理使用者權限
-                }
-            })
-        } catch (err) {
-            return res.status(500).json({ error: err.message })
-        }
-    }
-
-    // DELETE: Revoke permissions (set role back to 'user')
-    if (method === 'DELETE') {
-        const { userId, requesterId } = req.body
-
-        if (!userId || !requesterId) {
-            return res.status(400).json({ error: 'userId and requesterId are required' })
-        }
-
-        try {
-            const { data: requester } = await supabaseAdmin
-                .from('users').select('role').eq('id', requesterId).single()
 
             if (!['system_admin', 'platform_manager'].includes(requester?.role)) {
                 return res.status(403).json({ error: '權限不足' })

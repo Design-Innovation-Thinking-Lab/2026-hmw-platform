@@ -1,11 +1,4 @@
-import { createClient } from '@supabase/supabase-js'
-
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
-const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY
-
-const supabaseAdmin = createClient(supabaseUrl, serviceRoleKey, {
-    auth: { persistSession: false }
-})
+import { requireUser, supabaseAdmin } from '../../../lib/auth'
 
 export default async function handler(req, res) {
     const { method } = req
@@ -14,6 +7,10 @@ export default async function handler(req, res) {
     if (method !== 'GET') {
         return res.status(405).json({ error: 'Method not allowed' })
     }
+
+    // 後台「分析結果」：需要 view_results 權限
+    const user = await requireUser(req, res, { permission: 'view_results' })
+    if (!user) return
 
     // At least one filter must be provided
     if (!projectId && !roomId && !runId && !startDate && !endDate) {

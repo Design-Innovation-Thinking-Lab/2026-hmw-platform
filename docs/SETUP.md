@@ -74,10 +74,10 @@ repo 裡**沒有任何金鑰**（`.env.local` 在 `.gitignore`），所以下面
 
 | # | 問題 | 位置 | 說明 |
 |---|---|---|---|
-| 1 | **密碼明文儲存** | `users.verification_password`、`pages/api/users/login.js` | 沒有 hash，直接用 `.eq()` 比對。學生帳號預設密碼 = 學號 |
-| 2 | **API 授權靠前端自報身分** | `pages/api/*`、`localStorage.userRole` | 沒有 session / JWT，request 帶什麼 userId 就當成是誰。課堂內網勉強可用，對外必須改 |
-| 3 | **debug API 無任何保護** | `pages/api/debug/fix-run.js` | 可直接 reset 任何研究室的分析狀態。研究室頁面有在呼叫它，不能直接刪，建議加管理員檢查 |
-| 4 | RLS policy 形同虛設 | `migrations/014` | 全部 `USING (true)`，且 app 走 service_role 本來就繞過 RLS。目前無害，但不要誤以為資料庫層有防護 |
+| 1 | ~~密碼明文儲存~~（已修，2026-11） | `migrations/025` | 改用 Supabase Auth（Email + 密碼、Google），明文密碼欄位已刪除 |
+| 2 | ~~API 授權靠前端自報身分~~（已修，2026-11） | `lib/auth.js`、`lib/apiFetch.js` | 每支 API 用 Supabase Auth 的 JWT 判斷身分，`localStorage` 只當顯示快取 |
+| 3 | ~~debug API 無任何保護~~（已修，2026-11） | `pages/api/debug/fix-run.js` | 只限 system_admin / platform_manager；研究室頁面的「重新分析」已不再呼叫它 |
+| 4 | ~~RLS policy 形同虛設~~（已修，2026-11） | `migrations/025` | 原本全部 `USING (true)`，anon key 可讀寫所有表。025 已刪除這些 policy，只有伺服器端的 service_role 能存取 |
 | 5 | 聯絡表單不會寄信 | `pages/api/contact.js` | Resend 的程式碼被註解掉，目前只 `console.log` |
 | 6 | 舊架構遺留表未清理 | 資料庫 | 正式環境有 7 張舊表帶著歷史資料，現行程式碼完全不讀寫。詳見 migrations/README.md |
 | 7 | 010 / 011 與 003 內容重複 | `migrations/` | 歷史原因，全部 `IF NOT EXISTS`，無害 |

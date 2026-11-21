@@ -14,6 +14,8 @@ import {
     User,
     LogIn
 } from '../components/icons'
+import { apiFetch } from '../lib/apiFetch'
+import { logout } from '../lib/session'
 
 export default function DashboardPage() {
     const router = useRouter()
@@ -46,7 +48,7 @@ export default function DashboardPage() {
         const storedUserName = localStorage.getItem('userName')
 
         if (!storedUserId) {
-            router.push('/register')
+            router.push('/login')
             return
         }
 
@@ -59,7 +61,7 @@ export default function DashboardPage() {
     const fetchProjects = async (uid) => {
         setLoadingProjects(true)
         try {
-            const res = await fetch(`/api/projects?userId=${uid}`)
+            const res = await apiFetch(`/api/projects?userId=${uid}`)
             const data = await res.json()
             if (res.ok) setProjects(data.projects || [])
         } catch (err) {
@@ -71,7 +73,7 @@ export default function DashboardPage() {
 
     const fetchRooms = async (uid) => {
         try {
-            const res = await fetch(`/api/rooms?userId=${uid}`)
+            const res = await apiFetch(`/api/rooms?userId=${uid}`)
             const data = await res.json()
             if (res.ok) setRooms(data.rooms || [])
         } catch (err) {
@@ -92,7 +94,7 @@ export default function DashboardPage() {
         }
 
         try {
-            const res = await fetch('/api/rooms', {
+            const res = await apiFetch('/api/rooms', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ action: 'create', creator_id: userId, ...createForm })
@@ -125,7 +127,7 @@ export default function DashboardPage() {
         }
 
         try {
-            const res = await fetch('/api/rooms', {
+            const res = await apiFetch('/api/rooms', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ action: 'join', room_code: joinCode, user_id: userId })
@@ -145,9 +147,8 @@ export default function DashboardPage() {
         }
     }
 
-    const handleLogout = () => {
-        localStorage.removeItem('userId')
-        localStorage.removeItem('userName')
+    const handleLogout = async () => {
+        await logout()
         router.push('/')
     }
 

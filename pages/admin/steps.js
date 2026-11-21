@@ -12,6 +12,7 @@ import {
     Image as ImageIcon,
     X
 } from '../../components/icons'
+import { apiFetch } from '../../lib/apiFetch'
 
 export default function StepsAdminPage() {
     const router = useRouter()
@@ -102,7 +103,7 @@ export default function StepsAdminPage() {
         setLoadingProjects(true)
         try {
             const storedUserId = localStorage.getItem('userId')
-            const res = await fetch(`/api/projects${storedUserId ? `?userId=${storedUserId}` : ''}`)
+            const res = await apiFetch(`/api/projects${storedUserId ? `?userId=${storedUserId}` : ''}`)
             const data = await res.json()
             if (!res.ok) throw new Error(data.error || 'Failed to fetch projects')
             setProjects(data.projects || [])
@@ -121,7 +122,7 @@ export default function StepsAdminPage() {
         setLoading(true)
         setError(null)
         try {
-            const res = await fetch(`/api/analysis/config?projectId=${projectId}`)
+            const res = await apiFetch(`/api/analysis/config?projectId=${projectId}`)
             const data = await res.json()
             if (!res.ok) throw new Error(data.error || 'Failed to fetch')
             setSteps(data.steps || [])
@@ -143,7 +144,7 @@ export default function StepsAdminPage() {
         setCreatingProject(true)
         setError(null)
         try {
-            const res = await fetch('/api/projects', {
+            const res = await apiFetch('/api/projects', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
@@ -208,7 +209,7 @@ export default function StepsAdminPage() {
         setSaving(true)
         try {
             const orderedIds = stepsToSave.map(s => s.id)
-            const res = await fetch(`/api/analysis/config?projectId=${projectId}`, {
+            const res = await apiFetch(`/api/analysis/config?projectId=${projectId}`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
@@ -230,7 +231,7 @@ export default function StepsAdminPage() {
             return
         }
         try {
-            const res = await fetch(`/api/analysis/config?projectId=${projectId}`, {
+            const res = await apiFetch(`/api/analysis/config?projectId=${projectId}`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
@@ -249,7 +250,7 @@ export default function StepsAdminPage() {
     async function handleToggleStatus(step) {
         try {
             // Only send actual DB columns, not joined relations like analysis_roles
-            const res = await fetch(`/api/analysis/config?projectId=${projectId}`, {
+            const res = await apiFetch(`/api/analysis/config?projectId=${projectId}`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
@@ -328,7 +329,7 @@ export default function StepsAdminPage() {
 
     async function fetchAttachments(stepId) {
         try {
-            const res = await fetch(`/api/analysis/step-attachments?stepId=${stepId}`)
+            const res = await apiFetch(`/api/analysis/step-attachments?stepId=${stepId}`)
             const data = await res.json()
             if (res.ok) {
                 setAttachments(data.attachments || [])
@@ -446,7 +447,7 @@ export default function StepsAdminPage() {
             else if (file.type === 'application/pdf') fileType = 'pdf'
             else if (file.type.includes('word')) fileType = 'document'
 
-            const res = await fetch('/api/analysis/step-attachments', {
+            const res = await apiFetch('/api/analysis/step-attachments', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
@@ -475,7 +476,7 @@ export default function StepsAdminPage() {
         if (!confirm('確定要刪除這個附件嗎？')) return
 
         try {
-            const res = await fetch('/api/analysis/step-attachments', {
+            const res = await apiFetch('/api/analysis/step-attachments', {
                 method: 'DELETE',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ attachmentId })
@@ -521,13 +522,13 @@ export default function StepsAdminPage() {
                 stepData.id = editingStep.id
                 stepData.step_index = originalStepIndex
             } else {
-                const configRes = await fetch(`/api/analysis/config?projectId=${projectId}`)
+                const configRes = await apiFetch(`/api/analysis/config?projectId=${projectId}`)
                 const configData = await configRes.json()
                 const maxIndex = configData.steps?.reduce((max, s) => Math.max(max, s.step_index || 0), 0) || 0
                 stepData.step_index = maxIndex + 1
             }
 
-            const res = await fetch(`/api/analysis/config?projectId=${projectId}`, {
+            const res = await apiFetch(`/api/analysis/config?projectId=${projectId}`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
@@ -556,7 +557,7 @@ export default function StepsAdminPage() {
 
                         if (uploadError) throw uploadError
 
-                        const attachRes = await fetch('/api/analysis/step-attachments', {
+                        const attachRes = await apiFetch('/api/analysis/step-attachments', {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
                             body: JSON.stringify({
@@ -607,7 +608,7 @@ export default function StepsAdminPage() {
     async function handleToggleDefault(project) {
         const newIsDefault = !project.is_default
         try {
-            const res = await fetch('/api/projects', {
+            const res = await apiFetch('/api/projects', {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({

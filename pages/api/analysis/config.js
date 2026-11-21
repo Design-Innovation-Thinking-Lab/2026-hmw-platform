@@ -1,15 +1,39 @@
-import { createClient } from '@supabase/supabase-js'
+import { requireUser, supabaseAdmin, canEditProject } from '../../../lib/auth'
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
-const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY
+/**
+ * 找出這次寫入會影響到的所有 project（新資料的 project_id + 既有步驟原本的 project_id），
+ * 每一個都要能編輯才放行，避免把別人的步驟改到自己的模式底下或反過來。
+ */
+async function affectedProjectIds(stepRows, stepIds) {
+    const ids = new Set()
+    for (const row of stepRows) {
+        if (row?.project_id) ids.add(row.project_id)
+    }
+    const existingIds = [...stepIds, ...stepRows.map(r => r?.id)].filter(Boolean)
+    if (existingIds.length > 0) {
+        const { data } = await supabaseAdmin
+            .from('analysis_flow_steps')
+            .select('id, project_id')
+            .in('id', existingIds)
+        for (const row of data || []) ids.add(row.project_id)
+    }
+    return [...ids]
+}
 
-const supabaseAdmin = createClient(supabaseUrl, serviceRoleKey, {
-    auth: { persistSession: false }
-})
+async function canEditAll(user, projectIds) {
+    if (projectIds.length === 0) return false
+    for (const pid of projectIds) {
+        if (!(await canEditProject(user, pid))) return false
+    }
+    return true
+}
 
 export default async function handler(req, res) {
     const { method } = req
     const { projectId } = req.query
+
+    const user = await requireUser(req, res, { backend: true })
+    if (!user) return
 
     if (!projectId && method === 'GET') {
         return res.status(400).json({ error: 'Missing projectId' })
@@ -17,6 +41,9 @@ export default async function handler(req, res) {
 
     // GET: Fetch config (Steps + Roles)
     if (method === 'GET') {
+        if (!user.perms.manage_modes) {
+            return res.status(403).json({ error: '權限不足' })
+        }
         try {
             const { data: steps, error: stepError } = await supabaseAdmin
                 .from('analysis_flow_steps')
@@ -49,6 +76,23 @@ export default async function handler(req, res) {
         const { type, data } = req.body // type: 'step' | 'role'
 
         try {
+            if (type === 'role') {
+                if (!user.perms.manage_roles) {
+                    return res.status(403).json({ error: '權限不足' })
+                }
+            } else {
+                let stepRows = []
+                let stepIds = []
+                if (type === 'step') stepRows = Array.isArray(data) ? data : [data]
+                else if (type === 'delete_step') stepIds = [data?.id]
+                else if (type === 'reorder') stepIds = Array.isArray(data?.orderedIds) ? data.orderedIds : []
+
+                const projectIds = await affectedProjectIds(stepRows, stepIds)
+                if (!(await canEditAll(user, projectIds))) {
+                    return res.status(403).json({ error: '權限不足：只能編輯自己擁有的分析模式' })
+                }
+            }
+
             if (type === 'step') {
                 const { error } = await supabaseAdmin.from('analysis_flow_steps').upsert(data)
                 if (error) throw error

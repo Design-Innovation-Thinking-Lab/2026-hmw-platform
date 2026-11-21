@@ -6,6 +6,7 @@ import formidable from 'formidable'
 import fs from 'fs'
 import mammoth from 'mammoth'
 import pdfParse from 'pdf-parse'
+import { requireUser } from '../../lib/auth'
 
 export const config = {
     api: {
@@ -17,6 +18,9 @@ export default async function handler(req, res) {
     if (req.method !== 'POST') {
         return res.status(405).json({ error: 'Method not allowed' })
     }
+
+    const user = await requireUser(req, res)
+    if (!user) return
 
     try {
         const form = formidable({

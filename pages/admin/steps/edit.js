@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/router'
 import { supabase } from '../../../lib/supabaseClient'
+import { apiFetch } from '../../../lib/apiFetch'
 
 export default function StepEditPage() {
     const router = useRouter()
@@ -40,7 +41,7 @@ export default function StepEditPage() {
         setLoading(true)
         setError(null)
         try {
-            const res = await fetch(`/api/analysis/config?projectId=${projectId}`)
+            const res = await apiFetch(`/api/analysis/config?projectId=${projectId}`)
             const data = await res.json()
             if (!res.ok) throw new Error(data.error || 'Failed to fetch')
 
@@ -74,7 +75,7 @@ export default function StepEditPage() {
 
     async function fetchAttachments(stepId) {
         try {
-            const res = await fetch(`/api/analysis/step-attachments?stepId=${stepId}`)
+            const res = await apiFetch(`/api/analysis/step-attachments?stepId=${stepId}`)
             const data = await res.json()
             if (res.ok) {
                 setAttachments(data.attachments || [])
@@ -133,7 +134,7 @@ export default function StepEditPage() {
             else if (file.type.includes('word')) fileType = 'document'
 
             // 3. Save attachment record to database
-            const res = await fetch('/api/analysis/step-attachments', {
+            const res = await apiFetch('/api/analysis/step-attachments', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
@@ -165,7 +166,7 @@ export default function StepEditPage() {
         if (!confirm('確定要刪除這個附件嗎？')) return
 
         try {
-            const res = await fetch('/api/analysis/step-attachments', {
+            const res = await apiFetch('/api/analysis/step-attachments', {
                 method: 'DELETE',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ attachmentId })
@@ -269,13 +270,13 @@ export default function StepEditPage() {
                 stepData.step_index = originalStepIndex
             } else {
                 // Get current steps to determine next index
-                const configRes = await fetch(`/api/analysis/config?projectId=${projectId}`)
+                const configRes = await apiFetch(`/api/analysis/config?projectId=${projectId}`)
                 const configData = await configRes.json()
                 const maxIndex = configData.steps?.reduce((max, s) => Math.max(max, s.step_index || 0), 0) || 0
                 stepData.step_index = maxIndex + 1
             }
 
-            const res = await fetch(`/api/analysis/config?projectId=${projectId}`, {
+            const res = await apiFetch(`/api/analysis/config?projectId=${projectId}`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({

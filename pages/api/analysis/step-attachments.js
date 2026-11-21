@@ -1,14 +1,11 @@
-import { createClient } from '@supabase/supabase-js'
-
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
-const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY
-
-const supabaseAdmin = createClient(supabaseUrl, serviceRoleKey, {
-    auth: { persistSession: false }
-})
+import { requireUser, supabaseAdmin, canEditProject, projectIdOfStep } from '../../../lib/auth'
 
 export default async function handler(req, res) {
     const { method } = req
+
+    // 步驟附件屬於分析模式設定：需要 manage_modes；新增、刪除還要能編輯該模式
+    const user = await requireUser(req, res, { permission: 'manage_modes' })
+    if (!user) return
 
     // GET: Fetch all attachments for a specific step
     if (method === 'GET') {
@@ -40,6 +37,10 @@ export default async function handler(req, res) {
 
         if (!stepId || !fileName || !storageUrl) {
             return res.status(400).json({ error: 'Missing required fields: stepId, fileName, storageUrl' })
+        }
+
+        if (!(await canEditProject(user, await projectIdOfStep(stepId)))) {
+            return res.status(403).json({ error: '權限不足：只能編輯自己擁有的分析模式' })
         }
 
         try {
@@ -81,11 +82,15 @@ export default async function handler(req, res) {
             // 1. Get attachment info before deletion
             const { data: attachment, error: fetchError } = await supabaseAdmin
                 .from('analysis_step_attachments')
-                .select('storage_path')
+                .select('storage_path, step_id')
                 .eq('id', attachmentId)
                 .single()
 
             if (fetchError) throw fetchError
+
+            if (!(await canEditProject(user, await projectIdOfStep(attachment.step_id)))) {
+                return res.status(403).json({ error: '權限不足：只能編輯自己擁有的分析模式' })
+            }
 
             // 2. Delete from storage
             if (attachment?.storage_path) {

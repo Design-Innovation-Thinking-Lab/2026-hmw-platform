@@ -1,74 +1,59 @@
 /**
  * POST /api/admin/reset-password
- * Admin resets a user's password to a default value.
- * Sets must_change_password = true so user is forced to change on next login.
+ * 管理員替使用者寄出「重設密碼」信（Supabase Auth）。
+ * 不再把密碼改成固定的預設值；使用者點信裡的連結到 /reset-password 自己設新密碼。
+ * 只有 system_admin / platform_manager 可以使用；platform_manager 不能對 system_admin 使用。
  */
-import { createClient } from '@supabase/supabase-js'
+import { requireUser, supabaseAdmin } from '../../../lib/auth'
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
-const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY
-
-const supabaseAdmin = createClient(supabaseUrl, serviceRoleKey, {
-    auth: { persistSession: false }
-})
-
-const DEFAULT_PASSWORD = '0000'
+function siteOrigin(req) {
+    if (process.env.SITE_URL) return process.env.SITE_URL.replace(/\/$/, '')
+    const proto = req.headers['x-forwarded-proto'] || 'https'
+    return `${proto}://${req.headers.host}`
+}
 
 export default async function handler(req, res) {
     if (req.method !== 'POST') {
         return res.status(405).json({ error: 'Method not allowed' })
     }
 
-    const { adminId, userId } = req.body
+    const admin = await requireUser(req, res, { roles: ['system_admin', 'platform_manager'] })
+    if (!admin) return
 
-    if (!adminId || !userId) {
-        return res.status(400).json({ error: 'adminId and userId are required' })
+    const { userId } = req.body || {}
+    if (!userId) {
+        return res.status(400).json({ error: 'userId is required' })
     }
 
     try {
-        // Verify requester has permission
-        const { data: admin } = await supabaseAdmin
-            .from('users')
-            .select('role')
-            .eq('id', adminId)
-            .single()
-
-        if (!['system_admin', 'platform_manager'].includes(admin?.role)) {
-            return res.status(403).json({ error: '權限不足：只有系統管理員或平台管理者可以重設密碼' })
-        }
-
-        // Get target user info
         const { data: target } = await supabaseAdmin
             .from('users')
-            .select('name, role')
+            .select('name, role, email')
             .eq('id', userId)
-            .single()
+            .maybeSingle()
 
         if (!target) {
             return res.status(404).json({ error: '找不到該使用者' })
         }
 
-        // Cannot reset system_admin password (unless you are system_admin)
-        if (target.role === 'system_admin' && admin?.role !== 'system_admin') {
+        if (target.role === 'system_admin' && admin.role !== 'system_admin') {
             return res.status(403).json({ error: '無法重設系統管理員的密碼' })
         }
 
-        // Reset password and set flag
-        const { error } = await supabaseAdmin
-            .from('users')
-            .update({
-                verification_password: DEFAULT_PASSWORD,
-                must_change_password: true
-            })
-            .eq('id', userId)
+        if (!target.email) {
+            return res.status(400).json({ error: '這個使用者沒有 Email，無法寄送重設密碼信' })
+        }
 
+        const { error } = await supabaseAdmin.auth.resetPasswordForEmail(target.email, {
+            redirectTo: `${siteOrigin(req)}/reset-password`,
+        })
         if (error) throw error
 
         return res.status(200).json({
-            message: `已將「${target.name}」的密碼重設為預設密碼（${DEFAULT_PASSWORD}），該使用者下次登入時須自行變更密碼。`
+            message: `已寄出重設密碼信給「${target.name}」，請對方到信箱點連結設定新密碼。`
         })
     } catch (err) {
-        console.error('Error resetting password:', err)
-        return res.status(500).json({ error: err.message })
+        console.error('Error sending reset email:', err)
+        return res.status(500).json({ error: '寄送重設密碼信失敗' })
     }
 }

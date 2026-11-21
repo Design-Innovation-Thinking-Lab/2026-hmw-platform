@@ -1,19 +1,17 @@
-import { createClient } from '@supabase/supabase-js'
-
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
-const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY
-
-const supabaseAdmin = createClient(supabaseUrl, serviceRoleKey, {
-    auth: { persistSession: false }
-})
+import { requireUser, supabaseAdmin, getQuotaStatus, isRoomMember, canEditProject } from '../../../lib/auth'
 
 /**
- * Get the start of today in Asia/Taipei timezone as ISO string
+ * 一般使用者只能用預設或公開的分析模式；自己擁有的（或管理員）可以用任何模式。
  */
-function getTodayStartTaipei() {
-    const now = new Date()
-    const taipeiDate = now.toLocaleDateString('en-CA', { timeZone: 'Asia/Taipei' })
-    return new Date(taipeiDate + 'T00:00:00+08:00').toISOString()
+async function canUseProject(user, projectId) {
+    const { data: project } = await supabaseAdmin
+        .from('projects')
+        .select('id, is_default, is_public, owner_id')
+        .eq('id', projectId)
+        .maybeSingle()
+    if (!project) return false
+    if (project.is_default || project.is_public) return true
+    return canEditProject(user, projectId)
 }
 
 export default async function handler(req, res) {
@@ -21,7 +19,12 @@ export default async function handler(req, res) {
         return res.status(405).json({ error: 'Method not allowed' })
     }
 
-    const { projectId, roomId, initiatorId } = req.body
+    // 會呼叫 LLM（花研究室的錢）：一定要登入、填完個人資料、檢查額度
+    const user = await requireUser(req, res, { profile: true })
+    if (!user) return
+
+    const { projectId, roomId } = req.body
+    const initiatorId = user.id
 
     // Either projectId or roomId is required
     if (!projectId && !roomId) {
@@ -29,38 +32,22 @@ export default async function handler(req, res) {
     }
 
     try {
-        // --- Daily Quota Check ---
-        if (initiatorId) {
-            const { data: user, error: userError } = await supabaseAdmin
-                .from('users')
-                .select('daily_analysis_quota, role')
-                .eq('id', initiatorId)
-                .single()
-
-            if (!userError && user && user.role !== 'system_admin') {
-                const dailyQuota = user.daily_analysis_quota ?? 3
-
-                const todayStart = getTodayStartTaipei()
-                const { count, error: countError } = await supabaseAdmin
-                    .from('analysis_runs')
-                    .select('*', { count: 'exact', head: true })
-                    .eq('initiator_id', initiatorId)
-                    .gte('created_at', todayStart)
-
-                if (!countError) {
-                    const usedToday = count || 0
-                    if (usedToday >= dailyQuota) {
-                        return res.status(429).json({
-                            error: `今日分析次數已達上限（${dailyQuota} 次/天）。如需更多次數，請聯繫管理員。`,
-                            quotaExceeded: true,
-                            dailyQuota,
-                            usedToday
-                        })
-                    }
-                }
-            }
+        // --- Daily Quota Check（一律檢查，不能略過）---
+        const quota = await getQuotaStatus(user)
+        if (!quota.unlimited && quota.remaining <= 0) {
+            return res.status(429).json({
+                error: `今日分析次數已達上限（${quota.dailyQuota} 次/天）。如需更多次數，請聯繫管理員。`,
+                quotaExceeded: true,
+                dailyQuota: quota.dailyQuota,
+                usedToday: quota.usedToday
+            })
         }
         // --- End Quota Check ---
+
+        if (projectId && !(await canUseProject(user, projectId))) {
+            return res.status(403).json({ error: '無法使用這個分析模式' })
+        }
+
         // If roomId is provided, fetch room details and validate transcripts
         if (roomId) {
             // Check if room exists
@@ -72,6 +59,23 @@ export default async function handler(req, res) {
 
             if (roomError || !room) {
                 return res.status(404).json({ error: '找不到此房間' })
+            }
+
+            // 只有研究室成員可以啟動分析
+            if (!(await isRoomMember(user.id, roomId))) {
+                return res.status(403).json({ error: '只有研究室成員可以啟動分析' })
+            }
+
+            // 同一個研究室同時只跑一個分析
+            if (room.analysis_status === 'analyzing' && room.current_analysis_run_id) {
+                const { data: running } = await supabaseAdmin
+                    .from('analysis_runs')
+                    .select('status')
+                    .eq('id', room.current_analysis_run_id)
+                    .maybeSingle()
+                if (running && ['pending', 'processing', 'running'].includes(running.status)) {
+                    return res.status(409).json({ error: '這個研究室已經有分析在進行中' })
+                }
             }
 
             // Ensure at least one transcript exists
@@ -96,6 +100,10 @@ export default async function handler(req, res) {
                 }
             }
 
+            if (!(await canUseProject(user, effectiveProjectId))) {
+                return res.status(403).json({ error: '無法使用這個分析模式' })
+            }
+
             // Update room's project_id to the selected mode
             if (effectiveProjectId !== room.project_id) {
                 await supabaseAdmin
@@ -110,7 +118,7 @@ export default async function handler(req, res) {
                 .insert({
                     room_id: roomId,
                     project_id: effectiveProjectId,
-                    initiator_id: initiatorId || null,
+                    initiator_id: initiatorId,
                     status: 'pending'
                 })
                 .select()
@@ -135,12 +143,16 @@ export default async function handler(req, res) {
             })
         }
 
-        // Original project-based analysis
+        // 沒有研究室的分析（舊流程）：只有能編輯該模式的後台使用者可以啟動
+        if (!(await canEditProject(user, projectId))) {
+            return res.status(403).json({ error: '權限不足' })
+        }
+
         const { data, error } = await supabaseAdmin
             .from('analysis_runs')
             .insert({
                 project_id: projectId,
-                initiator_id: initiatorId || null,
+                initiator_id: initiatorId,
                 status: 'pending'
             })
             .select()

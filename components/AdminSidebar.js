@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/router'
+import { logout } from '../lib/session'
 import {
     Home,
     Settings,
@@ -38,12 +39,8 @@ export default function AdminSidebar({ isAdmin = false, currentPath = '', userNa
         localStorage.setItem('sidebarExpanded', newState.toString())
     }
 
-    const handleLogout = () => {
-        localStorage.removeItem('adminAuth')
-        localStorage.removeItem('adminAuthTime')
-        localStorage.removeItem('isAdmin')
-        localStorage.removeItem('userId')
-        localStorage.removeItem('userName')
+    const handleLogout = async () => {
+        await logout()
         router.push('/')
     }
 

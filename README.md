@@ -7,7 +7,7 @@
 | 用途 | 上傳訪談逐字稿，AI 依多步驟流程分析，產出 HMW 問題句，團隊在研究室裡投票 |
 | 負責人 | DITL Jintin（開發）；DITL Jenny（接手）（Email、電話只寫在研究室的私有登記表） |
 | 網站 | https://2026-hmw-platform.vercel.app/ （測試中，只放假資料） |
-| 用到的服務 | GitHub（本 repo）、Vercel（網站與 API、Cron）、Supabase（資料庫、Storage 私人 bucket `uploads`）、Anthropic API（研究室的 key） |
+| 用到的服務 | GitHub（本 repo）、Vercel（網站與 API、Cron）、Supabase（資料庫、Auth、Storage 私人 bucket `uploads`）、Google Cloud（Google 登入用的 OAuth 用戶端，設定在 Supabase Auth 的 Google provider）、Anthropic API（研究室的 key） |
 | 聯絡 | drhhtang@gapps.ntust.edu.tw |
 | 狀態 | 搬進研究室中（2026-11）；正式上線前要先完成下面的安全修正 |
 
@@ -15,9 +15,9 @@
 
 這個專案從學生交的 zip 建立，原本部署在 Heroku。搬到研究室的 Vercel + Supabase 之前，**一定要先修好**以下問題（詳見 [docs/SETUP.md](docs/SETUP.md) 第五節），修好並經過審核之前不放真資料、不公開網址：
 
-- [ ] 密碼改成雜湊，或改用 Supabase Auth（目前明文儲存）
-- [ ] API 改在伺服器端確認身分（目前相信前端送來的 userId）
-- [ ] `pages/api/debug/fix-run.js` 加上管理員檢查
+- [x] 密碼改用 Supabase Auth（Email + 密碼、Google 登入）；舊的明文密碼欄位已刪除（migration 025）
+- [x] API 改在伺服器端確認身分：每支 `pages/api/*` 都用 Supabase Auth 的 token 判斷是誰（`lib/auth.js`），不再相信前端送來的 userId
+- [x] `pages/api/debug/fix-run.js` 加上管理員檢查（system_admin / platform_manager）
 - [ ] Storage bucket `uploads` 改成私人，用 signed URL 讀取
 - [ ] 常駐 worker 改成 Vercel Cron 定時呼叫受保護的 API，每次跑一輪（可借用 `WORKER_MODE=job`）
 - [ ] 超過 4.5 MB 的上傳改用 signed upload URL 直接傳到 Storage
@@ -89,6 +89,21 @@ npm run worker
 
 - http://localhost:3000 — 首頁 / 登入 / 註冊
 - http://localhost:3000/admin — 後台（需 `system_admin` 角色，見 `migrations/templates/set_first_admin.sql`）
+
+### 登入（Supabase Auth）
+
+登入、註冊、忘記密碼都由 Supabase Auth 處理，密碼由 Supabase 雜湊保存，程式碼碰不到。
+前端呼叫 API 一律用 `lib/apiFetch.js`（自動帶 `Authorization: Bearer <token>`），
+API 開頭呼叫 `requireUser(req, res, {...})`（`lib/auth.js`）確認身分與權限。
+`localStorage` 裡的 `userId` / `userName` 只是畫面顯示用的快取，伺服器不採信。
+
+Supabase Dashboard 需要設定（找老師）：
+1. **Authentication → URL Configuration**：Site URL 設成網站網址；Redirect URLs 加上
+   `<網站網址>/auth/callback`、`<網站網址>/reset-password`（本機開發另外加 `http://localhost:3000/**`）。
+2. **Authentication → Providers → Email**：建議開啟「Confirm email」。
+3. **Authentication → Providers → Google**：開啟，填入 Google Cloud 的 OAuth Client ID / Secret。
+   Google Cloud Console 的「已授權的重新導向 URI」填 `https://<supabase 專案>.supabase.co/auth/v1/callback`。
+4. 寄信：Supabase 內建的寄信額度很低，正式上線前建議在 **Authentication → SMTP Settings** 設定研究室的寄信服務。
 
 > `npm run build` 在 build 階段就需要 `NEXT_PUBLIC_SUPABASE_URL`
 > （`lib/supabaseClient.js` 在模組載入時就建立 client），所以本機 build 前要先準備好 `.env.local`。

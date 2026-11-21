@@ -10,6 +10,7 @@ import {
     AlertTriangle,
     ChevronLeft
 } from '../../components/icons'
+import { apiFetch } from '../../lib/apiFetch'
 
 const ROLE_NAMES = {
     system_admin: '系統管理員',
@@ -78,7 +79,7 @@ export default function AdminUsersPage() {
             }
 
             try {
-                const res = await fetch('/api/admin/users', {
+                const res = await apiFetch('/api/admin/users', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ userId })
@@ -112,7 +113,7 @@ export default function AdminUsersPage() {
     async function fetchUsers() {
         setLoading(true)
         try {
-            const res = await fetch('/api/admin/users?includeUsage=true')
+            const res = await apiFetch('/api/admin/users?includeUsage=true')
             const data = await res.json()
             if (!res.ok) throw new Error(data.error)
             setUsers(data.users || [])
@@ -128,7 +129,7 @@ export default function AdminUsersPage() {
         setChangingRole(userId)
         setError(null)
         try {
-            const res = await fetch('/api/admin/users', {
+            const res = await apiFetch('/api/admin/users', {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ adminId: currentUserId, userId, newRole })
@@ -156,7 +157,7 @@ export default function AdminUsersPage() {
         }
 
         try {
-            const res = await fetch('/api/admin/users', {
+            const res = await apiFetch('/api/admin/users', {
                 method: 'PATCH',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ adminId: currentUserId, userId, permissions: updated })
@@ -174,13 +175,13 @@ export default function AdminUsersPage() {
 
     // --- Password Reset ---
     async function handleResetPassword(userId, userName) {
-        if (!confirm(`確定要將「${userName}」的密碼重設為預設密碼（0000）嗎？\n該使用者下次登入時須自行變更密碼。`)) {
+        if (!confirm(`確定要寄送重設密碼信給「${userName}」嗎？\n對方會收到一封信，點連結後自行設定新密碼。`)) {
             return
         }
         setResettingPassword(userId)
         setError(null)
         try {
-            const res = await fetch('/api/admin/reset-password', {
+            const res = await apiFetch('/api/admin/reset-password', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ adminId: currentUserId, userId })
@@ -205,7 +206,7 @@ export default function AdminUsersPage() {
         setSavingQuota(true)
         setError(null)
         try {
-            const res = await fetch('/api/admin/users', {
+            const res = await apiFetch('/api/admin/users', {
                 method: 'PATCH',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
@@ -560,7 +561,7 @@ export default function AdminUsersPage() {
                                                             style={styles.resetButton}
                                                             disabled={resettingPassword === user.id}
                                                         >
-                                                            {resettingPassword === user.id ? '重設中...' : '重設密碼'}
+                                                            {resettingPassword === user.id ? '寄送中...' : '寄重設密碼信'}
                                                         </button>
                                                     )}
                                                 </td>
