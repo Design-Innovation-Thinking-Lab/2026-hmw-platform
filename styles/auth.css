@@ -168,6 +168,7 @@
     color: var(--color-gray-700);
     border-color: var(--color-dark);
     box-shadow: var(--shadow-neobrutalism-md);
+    margin-top: var(--space-2);
     margin-bottom: var(--space-4);
 }
 

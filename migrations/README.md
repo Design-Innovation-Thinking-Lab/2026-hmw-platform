@@ -2,17 +2,17 @@
 
 ## 最快的方式：跑兩份打包好的 SQL
 
-`bundle/` 裡是把 `001`–`025` 合併好的兩份檔案，內容與逐支檔案完全相同。
+`bundle/` 裡是把 `001`–`026` 合併好的兩份檔案，內容與逐支檔案完全相同。
 到 **Supabase Dashboard → SQL Editor**，整檔複製貼上後 Run：
 
 1. **`bundle/01_run_first.sql`** — 建立所有資料表結構（001–020）
-2. **`bundle/02_run_second.sql`** — 角色遷移 + 預設分析模式的 prompt + Supabase Auth（021–025）
+2. **`bundle/02_run_second.sql`** — 角色遷移 + 預設分析模式的 prompt + Supabase Auth + Cron（021–026）
 
 **必須分兩次執行，順序不能顛倒。** 原因：`020` 用 `ALTER TYPE ... ADD VALUE` 新增
 enum 值，Postgres 規定新增的值要等該交易 commit 後才能使用，而 `021` 會用到它們。
 SQL Editor 每按一次 Run 就是一個交易，分兩次跑剛好滿足這個限制。
 
-想逐支檢視或逐支執行也可以，就照 `001` → `025` 的順序，**每一支都要跑，沒有例外**。
+想逐支檢視或逐支執行也可以，就照 `001` → `026` 的順序，**每一支都要跑，沒有例外**。
 
 ## 跑完之後還要做三件事
 
@@ -50,6 +50,7 @@ SQL Editor 每按一次 Run 就是一個交易，分兩次跑剛好滿足這個�
 | `023_hmw_votes_vote_type.sql` | hmw_votes.vote_type |
 | `024_seed_default_analysis_modes.sql` | **三種預設分析模式的 prompt** |
 | `025_supabase_auth.sql` | 登入改用 Supabase Auth：auth.users → public.users 的 trigger、刪除明文密碼欄位、刪除所有 `USING (true)` policy |
+| `026_cron_worker.sql` | 分析由 Vercel Cron 分好幾輪跑完：analysis_runs 租約與「最長的一步」欄位、analysis_results.room_transcript_id、`claim_analysis_runs()` |
 
 `024` 特別說明：**分析用的 prompt 存在資料庫、不在程式碼裡**
 （`analysis_roles.system_prompt`、`analysis_flow_steps.prompt_template`，從後台 `/admin/steps` 編輯）。
