@@ -2,7 +2,8 @@ import { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/router'
 import AdminSidebar from '../../components/AdminSidebar'
 import { adminStyles } from '../../styles/adminStyles'
-import { supabase } from '../../lib/supabaseClient'
+import { uploadFile } from '../../lib/storageClient'
+import StorageImage from '../../components/StorageImage'
 import {
     ClipboardList,
     Plus,
@@ -358,23 +359,12 @@ export default function StepsAdminPage() {
         setError(null)
 
         try {
-            const bucket = process.env.NEXT_PUBLIC_SUPABASE_BUCKET || 'uploads'
-            const fileExt = file.name.split('.').pop()
-            const fileName = `${projectId}/step-images/${Date.now()}.${fileExt}`
-
-            const { data, error: uploadError } = await supabase.storage
-                .from(bucket)
-                .upload(fileName, file, { upsert: false })
-
-            if (uploadError) throw uploadError
-
-            const { data: urlData } = supabase.storage
-                .from(bucket)
-                .getPublicUrl(data.path)
+            // 私人 bucket：存物件路徑，顯示時再換成 signed URL（StorageImage）
+            const path = await uploadFile({ purpose: 'step-image', projectId, file })
 
             setStepFormData(prev => ({
                 ...prev,
-                prompt_image_url: urlData.publicUrl
+                prompt_image_url: path
             }))
         } catch (err) {
             setError('圖片上傳失敗：' + err.message)
@@ -432,15 +422,7 @@ export default function StepsAdminPage() {
         setError(null)
 
         try {
-            const bucket = process.env.NEXT_PUBLIC_SUPABASE_BUCKET || 'uploads'
-            const fileExt = file.name.split('.').pop()
-            const fileName = `step-attachments/${editingStep.id}/${Date.now()}.${fileExt}`
-
-            const { data, error: uploadError } = await supabase.storage
-                .from(bucket)
-                .upload(fileName, file, { upsert: false })
-
-            if (uploadError) throw uploadError
+            const storagePath = await uploadFile({ purpose: 'step-attachment', stepId: editingStep.id, file })
 
             let fileType = 'reference'
             if (file.type.startsWith('image/')) fileType = 'image'
@@ -453,7 +435,7 @@ export default function StepsAdminPage() {
                 body: JSON.stringify({
                     stepId: editingStep.id,
                     fileName: file.name,
-                    storageUrl: data.path,
+                    storageUrl: storagePath,
                     mimeType: file.type,
                     fileSize: file.size,
                     fileType
@@ -547,15 +529,7 @@ export default function StepsAdminPage() {
             if (tempAttachments.length > 0 && savedStepId) {
                 for (const tempAtt of tempAttachments) {
                     try {
-                        const bucket = process.env.NEXT_PUBLIC_SUPABASE_BUCKET || 'uploads'
-                        const fileExt = tempAtt.file_name.split('.').pop()
-                        const fileName = `step-attachments/${savedStepId}/${Date.now()}.${fileExt}`
-
-                        const { data, error: uploadError } = await supabase.storage
-                            .from(bucket)
-                            .upload(fileName, tempAtt._tempFile, { upsert: false })
-
-                        if (uploadError) throw uploadError
+                        const storagePath = await uploadFile({ purpose: 'step-attachment', stepId: savedStepId, file: tempAtt._tempFile })
 
                         const attachRes = await apiFetch('/api/analysis/step-attachments', {
                             method: 'POST',
@@ -563,7 +537,7 @@ export default function StepsAdminPage() {
                             body: JSON.stringify({
                                 stepId: savedStepId,
                                 fileName: tempAtt.file_name,
-                                storageUrl: data.path,
+                                storageUrl: storagePath,
                                 mimeType: tempAtt.mime_type,
                                 fileSize: tempAtt.file_size,
                                 fileType: tempAtt.file_type
@@ -903,8 +877,8 @@ export default function StepsAdminPage() {
                                 <label style={adminStyles.formLabel}>Prompt 圖片 (選填)</label>
                                 {stepFormData.prompt_image_url ? (
                                     <div style={{ position: 'relative', display: 'inline-block' }}>
-                                        <img
-                                            src={stepFormData.prompt_image_url}
+                                        <StorageImage
+                                            value={stepFormData.prompt_image_url}
                                             alt="Prompt"
                                             style={{ maxWidth: '100%', maxHeight: 200, borderRadius: 8, display: 'block' }}
                                         />

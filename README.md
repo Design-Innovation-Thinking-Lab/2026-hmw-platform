@@ -18,9 +18,9 @@
 - [x] 密碼改用 Supabase Auth（Email + 密碼、Google 登入）；舊的明文密碼欄位已刪除（migration 025）
 - [x] API 改在伺服器端確認身分：每支 `pages/api/*` 都用 Supabase Auth 的 token 判斷是誰（`lib/auth.js`），不再相信前端送來的 userId
 - [x] `pages/api/debug/fix-run.js` 加上管理員檢查（system_admin / platform_manager）
-- [ ] Storage bucket `uploads` 改成私人，用 signed URL 讀取
+- [x] Storage bucket `uploads` 是私人的：讀檔用 signed URL（`/api/storage/signed-url`），上傳用 signed upload URL（`/api/storage/upload-url`），都先在伺服器端檢查權限（`lib/storage.js`）
 - [ ] 常駐 worker 改成 Vercel Cron 定時呼叫受保護的 API，每次跑一輪（可借用 `WORKER_MODE=job`）
-- [ ] 超過 4.5 MB 的上傳改用 signed upload URL 直接傳到 Storage
+- [x] 超過 4 MB 的逐字稿改用 signed upload URL 直接傳到 Storage，由伺服器解析成文字後刪除原始檔（單檔上限 50 MB）
 
 ### 接手（學生）
 
@@ -74,7 +74,7 @@ cp .env.local.example .env.local   # 填入 Supabase 與 Azure OpenAI 的值
 ```
 
 資料庫：在 Supabase 建一個新專案，依 [migrations/README.md](migrations/README.md)
-跑 `migrations/bundle/` 裡的兩份 SQL，再建立 Public bucket `uploads`。
+跑 `migrations/bundle/` 裡的兩份 SQL，再建立**私人**（不要勾 Public）bucket `uploads`。
 完整流程見 [docs/SETUP.md](docs/SETUP.md)。
 
 啟動（兩個終端機，或用 `./start-dev.sh` 一次起兩個）：

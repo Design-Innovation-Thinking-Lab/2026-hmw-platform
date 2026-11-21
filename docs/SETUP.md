@@ -28,7 +28,7 @@ repo 裡**沒有任何金鑰**（`.env.local` 在 `.gitignore`），所以下面
 □ 3. Supabase SQL Editor：跑 migrations/bundle/01_run_first.sql
 □ 4. 確認成功後，再跑 migrations/bundle/02_run_second.sql
         ⚠️ 一定要分兩次、照順序，原因見 migrations/README.md
-□ 5. Supabase Storage：建立 bucket「uploads」，設為 Public
+□ 5. Supabase Storage：建立 bucket「uploads」，設為私人（不要勾 Public），File size limit 設 50 MB
 □ 6. Anthropic：console.anthropic.com 申請 API key（建議先買 US$20 額度）
 □ 7. cp .env.local.example .env.local，填入 2、5、6 的值
 □ 8. npm run dev（終端機 A）+ npm run worker（終端機 B）
@@ -49,7 +49,7 @@ repo 裡**沒有任何金鑰**（`.env.local` 在 `.gitignore`），所以下面
 | 分析一直卡在 `pending` | worker 沒在跑，或 `ANTHROPIC_API_KEY` 錯。看 worker 的 log |
 | 分析失敗，前端只顯示「連線逾時中斷」 | 這是 `engine.js` 包過的泛用訊息，真正的錯誤在 worker log 裡，往上找 `Claude (Anthropic) Error:` 那一段 |
 | 後台看不到任何分析模式 | `bundle/02_run_second.sql` 沒執行（或只跑了第 1 份） |
-| 上傳檔案失敗 | bucket 名稱跟 `NEXT_PUBLIC_SUPABASE_BUCKET` 不一致，或沒設成 Public |
+| 上傳檔案失敗 | bucket 名稱跟 `NEXT_PUBLIC_SUPABASE_BUCKET` 不一致，或 bucket 的 File size limit 小於檔案 |
 | 進不了 `/admin` | 帳號的 `role` 不是 `system_admin`，用 templates 那支 SQL 設定 |
 | `npm run build` 報 `supabaseUrl is required` | build 階段就需要環境變數，先準備好 `.env.local` |
 | 跑第 2 份 SQL 報 enum 相關錯誤 | 第 1 份沒先 commit，兩份要分開按 Run |

@@ -1,4 +1,5 @@
 import { requireUser, supabaseAdmin, canViewRoom, isRoomMember, isAdmin } from '../../lib/auth'
+import { classifyPath, downloadObject, extractText, fileExtension, removeObjects } from '../../lib/storage'
 
 /**
  * 修改 / 刪除逐字稿：上傳者本人、研究室建立者、或管理員。
@@ -57,15 +58,37 @@ export default async function handler(req, res) {
 
     // POST: Upload a new transcript
     if (method === 'POST') {
-        const { room_id, file_name, content } = req.body
+        const { room_id, file_name, storage_path, original_file_name } = req.body
+        let { content } = req.body
         const uploader_id = user.id
 
-        if (!room_id || !content) {
+        if (!room_id || (!content && !storage_path)) {
             return res.status(400).json({ error: '請提供完整資料' })
         }
 
         if (!(await isRoomMember(user.id, room_id))) {
             return res.status(403).json({ error: '只有研究室成員可以上傳逐字稿' })
+        }
+
+        // 大檔：前端已經用 signed upload URL 傳到 Storage，這裡下載、解析成文字，
+        // 存進 room_transcripts 後刪掉原始檔（逐字稿是研究資料，不多留一份）
+        if (storage_path) {
+            const info = classifyPath(storage_path)
+            if (!info || info.kind !== 'transcript' || info.id !== room_id) {
+                return res.status(400).json({ error: '檔案路徑不正確' })
+            }
+            try {
+                const buffer = await downloadObject(storage_path)
+                // 副檔名以伺服器產生的路徑為準
+                content = await extractText(buffer, `file.${fileExtension(storage_path)}`)
+            } catch (err) {
+                await removeObjects([storage_path])
+                return res.status(400).json({ error: `${original_file_name || '檔案'}解析失敗：${err.message}` })
+            }
+            await removeObjects([storage_path])
+            if (!content || !content.trim()) {
+                return res.status(400).json({ error: '檔案裡沒有可讀取的文字' })
+            }
         }
 
         try {
@@ -77,11 +100,12 @@ export default async function handler(req, res) {
                     file_name: file_name || '逐字稿',
                     content
                 })
-                .select('*, users(name)')
+                .select('id, room_id, uploader_id, file_name, created_at, users(name)')
                 .single()
 
             if (error) throw error
 
+            // 不回傳全文：大檔的內容可能超過 Vercel 回應的 4.5 MB 上限
             return res.status(200).json({ success: true, transcript: data })
         } catch (err) {
             console.error('Error uploading transcript:', err)

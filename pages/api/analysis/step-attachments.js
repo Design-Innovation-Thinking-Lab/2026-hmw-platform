@@ -1,4 +1,5 @@
 import { requireUser, supabaseAdmin, canEditProject, projectIdOfStep } from '../../../lib/auth'
+import { classifyPath, removeObjects } from '../../../lib/storage'
 
 export default async function handler(req, res) {
     const { method } = req
@@ -41,6 +42,12 @@ export default async function handler(req, res) {
 
         if (!(await canEditProject(user, await projectIdOfStep(stepId)))) {
             return res.status(403).json({ error: '權限不足：只能編輯自己擁有的分析模式' })
+        }
+
+        // 檔案必須是透過 /api/storage/upload-url 傳到這個步驟底下的
+        const pathInfo = classifyPath(storageUrl)
+        if (!pathInfo || pathInfo.kind !== 'step-attachment' || pathInfo.id !== stepId) {
+            return res.status(400).json({ error: '附件路徑不正確' })
         }
 
         try {
@@ -93,16 +100,8 @@ export default async function handler(req, res) {
             }
 
             // 2. Delete from storage
-            if (attachment?.storage_path) {
-                const { error: storageError } = await supabaseAdmin.storage
-                    .from('analysis-files')
-                    .remove([attachment.storage_path])
-
-                if (storageError) {
-                    console.warn('Storage deletion warning:', storageError)
-                    // Continue even if storage deletion fails
-                }
-            }
+            // （原本寫成 'analysis-files' bucket，但檔案其實上傳到 BUCKET，所以從沒刪掉過）
+            await removeObjects([attachment?.storage_path])
 
             // 3. Delete from database
             const { error: deleteError } = await supabaseAdmin

@@ -16,7 +16,7 @@ SQL Editor 每按一次 Run 就是一個交易，分兩次跑剛好滿足這個�
 
 ## 跑完之後還要做三件事
 
-1. **Supabase Storage** → 建立一個 **Public** bucket，名稱要跟 `NEXT_PUBLIC_SUPABASE_BUCKET`
+1. **Supabase Storage** → 建立一個**私人**（不要勾 Public）bucket，名稱要跟 `NEXT_PUBLIC_SUPABASE_BUCKET`
    一致（預設 `uploads`）。沒有這個 bucket 無法上傳逐字稿。
 2. 到網站 `/register` 註冊第一個帳號（Email 或 Google），並填完個人資料。
 3. 用 `templates/set_first_admin.sql` 把那個帳號設成 `system_admin`，才能進 `/admin`。

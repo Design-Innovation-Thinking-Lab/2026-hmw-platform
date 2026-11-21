@@ -1,18 +1,24 @@
 /**
  * /api/parse-file - Parse uploaded file and extract text content
  * Supports: .txt, .docx, .pdf
+ *
+ * 只處理小檔（Vercel 的 API 一次最多收 4.5 MB）。
+ * 更大的檔案由前端改用 signed upload URL 直接傳到 Storage，
+ * 再呼叫 POST /api/transcripts（帶 storage_path）由伺服器解析。
  */
 import formidable from 'formidable'
 import fs from 'fs'
-import mammoth from 'mammoth'
-import pdfParse from 'pdf-parse'
 import { requireUser } from '../../lib/auth'
+import { extractText } from '../../lib/storage'
 
 export const config = {
     api: {
         bodyParser: false, // Required for formidable
     },
 }
+
+// 留一點空間給 multipart 的其他內容
+const MAX_DIRECT_UPLOAD_BYTES = 4 * 1024 * 1024
 
 export default async function handler(req, res) {
     if (req.method !== 'POST') {
@@ -22,67 +28,36 @@ export default async function handler(req, res) {
     const user = await requireUser(req, res)
     if (!user) return
 
+    let filePath = null
     try {
-        const form = formidable({
-            maxFileSize: 10 * 1024 * 1024, // 10MB limit
-        })
+        const form = formidable({ maxFileSize: MAX_DIRECT_UPLOAD_BYTES })
 
-        const [fields, files] = await form.parse(req)
+        const [, files] = await form.parse(req)
         const file = files.file?.[0]
 
         if (!file) {
             return res.status(400).json({ error: '請選擇檔案' })
         }
 
-        const filePath = file.filepath
+        filePath = file.filepath
         const fileName = file.originalFilename || 'unknown'
-        const extension = fileName.split('.').pop()?.toLowerCase()
 
-        let extractedText = ''
-
-        switch (extension) {
-            case 'txt':
-                extractedText = fs.readFileSync(filePath, 'utf-8')
-                break
-
-            case 'docx':
-                const docxResult = await mammoth.extractRawText({ path: filePath })
-                extractedText = docxResult.value
-                break
-
-            case 'pdf':
-                const pdfBuffer = fs.readFileSync(filePath)
-                const pdfResult = await pdfParse(pdfBuffer)
-                extractedText = pdfResult.text
-                break
-
-            case 'doc':
-                return res.status(400).json({
-                    error: '不支援 .doc 格式，請將檔案另存為 .docx 格式後再上傳'
-                })
-
-            case 'odt':
-                return res.status(400).json({
-                    error: '暫不支援 .odt 格式，請將檔案另存為 .docx 或 .txt 格式'
-                })
-
-            default:
-                return res.status(400).json({
-                    error: `不支援的檔案格式: .${extension}`
-                })
+        let extractedText
+        try {
+            extractedText = await extractText(fs.readFileSync(filePath), fileName)
+        } catch (err) {
+            return res.status(400).json({ error: err.message })
         }
-
-        // Clean up temp file
-        fs.unlinkSync(filePath)
 
         res.status(200).json({
             success: true,
             text: extractedText,
             fileName: fileName.replace(/\.[^/.]+$/, '') // Remove extension
         })
-
     } catch (error) {
         console.error('File parsing error:', error)
-        res.status(500).json({ error: '檔案解析失敗: ' + error.message })
+        res.status(500).json({ error: '檔案解析失敗' })
+    } finally {
+        if (filePath) fs.promises.unlink(filePath).catch(() => {})
     }
 }

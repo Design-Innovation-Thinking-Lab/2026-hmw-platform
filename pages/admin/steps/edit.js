@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/router'
-import { supabase } from '../../../lib/supabaseClient'
+import { uploadFile, isExternalUrl } from '../../../lib/storageClient'
+import StorageImage from '../../../components/StorageImage'
 import { apiFetch } from '../../../lib/apiFetch'
 
 export default function StepEditPage() {
@@ -116,16 +117,8 @@ export default function StepEditPage() {
         setError(null)
 
         try {
-            const bucket = process.env.NEXT_PUBLIC_SUPABASE_BUCKET || 'uploads'
-            const fileExt = file.name.split('.').pop()
-            const fileName = `step-attachments/${stepId}/${Date.now()}.${fileExt}`
-
-            // 1. Upload to Supabase Storage
-            const { data, error: uploadError } = await supabase.storage
-                .from(bucket)
-                .upload(fileName, file, { upsert: false })
-
-            if (uploadError) throw uploadError
+            // 1. Upload to Supabase Storage（signed upload URL，私人 bucket）
+            const storagePath = await uploadFile({ purpose: 'step-attachment', stepId, file })
 
             // 2. Determine file type category
             let fileType = 'reference'
@@ -140,7 +133,7 @@ export default function StepEditPage() {
                 body: JSON.stringify({
                     stepId,
                     fileName: file.name,
-                    storageUrl: data.path,
+                    storageUrl: storagePath,
                     mimeType: file.type,
                     fileSize: file.size,
                     fileType
@@ -203,24 +196,12 @@ export default function StepEditPage() {
         setError(null)
 
         try {
-            const bucket = process.env.NEXT_PUBLIC_SUPABASE_BUCKET || 'uploads'
-            const fileExt = file.name.split('.').pop()
-            const fileName = `${projectId}/step-images/${Date.now()}.${fileExt}`
-
-            const { data, error: uploadError } = await supabase.storage
-                .from(bucket)
-                .upload(fileName, file, { upsert: false })
-
-            if (uploadError) throw uploadError
-
-            // Get public URL
-            const { data: urlData } = supabase.storage
-                .from(bucket)
-                .getPublicUrl(data.path)
+            // 私人 bucket：存物件路徑，顯示時再換成 signed URL（StorageImage）
+            const path = await uploadFile({ purpose: 'step-image', projectId, file })
 
             setFormData(prev => ({
                 ...prev,
-                prompt_image_url: urlData.publicUrl
+                prompt_image_url: path
             }))
         } catch (err) {
             setError('圖片上傳失敗：' + err.message)
@@ -418,14 +399,14 @@ export default function StepEditPage() {
 
                         {formData.prompt_image_url ? (
                             <div style={styles.imagePreviewContainer}>
-                                <img
-                                    src={formData.prompt_image_url}
+                                <StorageImage
+                                    value={formData.prompt_image_url}
                                     alt="Step image"
                                     style={styles.imagePreview}
                                 />
                                 <div style={styles.imageActions}>
                                     <span style={styles.imageUrl}>
-                                        {formData.prompt_image_url.substring(0, 50)}...
+                                        {isExternalUrl(formData.prompt_image_url) ? `${formData.prompt_image_url.substring(0, 50)}...` : '已上傳的圖片'}
                                     </span>
                                     <button
                                         type="button"

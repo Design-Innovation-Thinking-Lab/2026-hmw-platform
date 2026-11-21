@@ -2,6 +2,10 @@ import { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/router'
 import { CheckCircle, Search } from '../../components/icons'
 import { apiFetch } from '../../lib/apiFetch'
+import { uploadFile } from '../../lib/storageClient'
+
+// Vercel 的 API 一次最多收 4.5 MB：超過這個大小的檔案改成直接傳到 Storage，由伺服器解析
+const DIRECT_UPLOAD_LIMIT = 4 * 1024 * 1024
 
 // ── Helper: render a single completed-step card during analysis ──
 function LiveStepCard({ step }) {
@@ -635,6 +639,8 @@ export default function RoomPage() {
             const id = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
             if (!['txt', 'docx', 'pdf'].includes(ext)) {
                 newFiles.push({ id, file, fileName: file.name, displayName: file.name.replace(/\.[^/.]+$/, ''), content: '', status: 'error', error: `不支援 .${ext} 格式` })
+            } else if (file.size > 50 * 1024 * 1024) {
+                newFiles.push({ id, file, fileName: file.name, displayName: file.name.replace(/\.[^/.]+$/, ''), content: '', status: 'error', error: '檔案超過 50 MB' })
             } else {
                 newFiles.push({ id, file, fileName: file.name, displayName: file.name.replace(/\.[^/.]+$/, ''), content: '', status: 'parsing', error: null })
             }
@@ -645,6 +651,11 @@ export default function RoomPage() {
         for (const pf of newFiles) {
             if (pf.status === 'error') continue
             const ext = pf.file.name.split('.').pop().toLowerCase()
+            if (pf.file.size > DIRECT_UPLOAD_LIMIT) {
+                // 大檔：上傳時才傳到 Storage，由伺服器解析
+                setPendingFiles(prev => prev.map(f => f.id === pf.id ? { ...f, largeFile: true, status: 'ready' } : f))
+                continue
+            }
             try {
                 let text = ''
                 if (ext === 'txt') {
@@ -724,15 +735,20 @@ export default function RoomPage() {
         let failCount = 0
         for (const pf of readyFiles) {
             try {
+                const body = {
+                    room_id: room.id,
+                    file_name: pf.displayName || `逐字稿 ${transcripts.length + successCount + 1}`,
+                }
+                if (pf.largeFile) {
+                    body.storage_path = await uploadFile({ purpose: 'transcript', roomId: room.id, file: pf.file })
+                    body.original_file_name = pf.fileName
+                } else {
+                    body.content = pf.content
+                }
                 const res = await apiFetch('/api/transcripts', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        room_id: room.id,
-                        uploader_id: userId,
-                        file_name: pf.displayName || `逐字稿 ${transcripts.length + successCount + 1}`,
-                        content: pf.content
-                    })
+                    body: JSON.stringify(body)
                 })
                 const data = await res.json()
                 if (!res.ok) throw new Error(data.error)
@@ -1027,7 +1043,7 @@ export default function RoomPage() {
                                 <p className="drop-zone-text">
                                     {isDragging ? '放開以加入檔案' : '拖曳檔案到此處，或點擊選擇檔案'}
                                 </p>
-                                <p className="drop-zone-hint">支援 .txt, .docx, .pdf，可同時選取多個檔案</p>
+                                <p className="drop-zone-hint">支援 .txt, .docx, .pdf，可同時選取多個檔案（單檔最大 50 MB）</p>
                             </div>
 
                             {pendingFiles.length > 0 && (
@@ -1040,7 +1056,7 @@ export default function RoomPage() {
                                             <span className="pending-file-status-icon">
                                                 {pf.status === 'parsing' ? '⏳' : pf.status === 'ready' ? '✅' : '❌'}
                                             </span>
-                                            <span className="pending-file-name">{pf.fileName}</span>
+                                            <span className="pending-file-name">{pf.fileName}{pf.largeFile ? '（大檔，上傳後由伺服器解析）' : ''}</span>
                                             {pf.error && <span className="pending-file-error-msg">{pf.error}</span>}
                                             <button
                                                 type="button"

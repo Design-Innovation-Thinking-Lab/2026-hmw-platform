@@ -93,9 +93,12 @@ export default async function handler(req, res) {
                 }
             }
 
+            let savedStep = null
             if (type === 'step') {
-                const { error } = await supabaseAdmin.from('analysis_flow_steps').upsert(data)
+                // 回傳存好的步驟：前端新增步驟後要用它的 id 上傳暫存的附件
+                const { data: saved, error } = await supabaseAdmin.from('analysis_flow_steps').upsert(data).select()
                 if (error) throw error
+                savedStep = Array.isArray(saved) ? saved[0] : saved
             } else if (type === 'role') {
                 const { error } = await supabaseAdmin.from('analysis_roles').upsert(data)
                 if (error) throw error
@@ -130,7 +133,7 @@ export default async function handler(req, res) {
             } else {
                 return res.status(400).json({ error: 'Invalid update type' })
             }
-            return res.status(200).json({ success: true })
+            return res.status(200).json({ success: true, step: savedStep })
         } catch (err) {
             console.error('Config update error', err)
             return res.status(500).json({ error: err.message })
