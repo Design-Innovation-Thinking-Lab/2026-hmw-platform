@@ -1,23 +1,22 @@
-import { createClient } from '@supabase/supabase-js'
+import crypto from 'crypto'
+import { requireUser, supabaseAdmin, canViewRoom } from '../../lib/auth'
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
-const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY
-
-const supabaseAdmin = createClient(supabaseUrl, serviceRoleKey, {
-    auth: { persistSession: false }
-})
-
-// Generate random 8-digit room code
+// Generate random 8-digit room code（用 crypto，代碼等於加入研究室的鑰匙，不能用 Math.random）
 function generateRoomCode() {
-    return Math.random().toString().slice(2, 10).padEnd(8, '0')
+    return crypto.randomInt(0, 100000000).toString().padStart(8, '0')
 }
 
 export default async function handler(req, res) {
     const { method } = req
 
-    // GET: Get room by code or list user's rooms
+    // 身分一律來自 session；body / query 裡的 userId、creator_id、user_id 不採信
+    const user = await requireUser(req, res)
+    if (!user) return
+
+    // GET: Get room by code（成員才能看）or list my rooms
     if (method === 'GET') {
-        const { code, userId } = req.query
+        const { code } = req.query
+        const userId = user.id
 
         try {
             if (code) {
@@ -28,11 +27,16 @@ export default async function handler(req, res) {
                     .eq('room_code', code)
                     .single()
 
-                if (error) throw error
+                if (error || !data) {
+                    return res.status(404).json({ error: '找不到此房間' })
+                }
+                if (!(await canViewRoom(user, data.id))) {
+                    return res.status(403).json({ error: '你還不是這個研究室的成員，請先用研究室代碼加入' })
+                }
                 return res.status(200).json({ room: data })
             }
 
-            if (userId) {
+            {
                 // Get rooms user is a member of
                 const { data: memberRooms, error: memberError } = await supabaseAdmin
                     .from('room_members')
@@ -66,7 +70,6 @@ export default async function handler(req, res) {
                 return res.status(200).json({ rooms })
             }
 
-            return res.status(400).json({ error: 'Missing code or userId' })
         } catch (err) {
             console.error('Error fetching room:', err)
             return res.status(500).json({ error: err.message })
@@ -87,11 +90,15 @@ export default async function handler(req, res) {
                     team_size,
                     min_votes,
                     max_votes,
-                    creator_id,
                     project_id
                 } = data
+                const creator_id = user.id
 
-                if (!name || !research_topic || !research_purpose || !creator_id) {
+                if (!user.occupation) {
+                    return res.status(403).json({ error: '請先完成個人資料', code: 'PROFILE_INCOMPLETE' })
+                }
+
+                if (!name || !research_topic || !research_purpose) {
                     return res.status(400).json({ error: '請填寫所有必填欄位' })
                 }
 
@@ -160,9 +167,10 @@ export default async function handler(req, res) {
 
             // Join existing room
             if (action === 'join') {
-                const { room_code, user_id } = data
+                const { room_code } = data
+                const user_id = user.id
 
-                if (!room_code || !user_id) {
+                if (!room_code) {
                     return res.status(400).json({ error: '請輸入房間代碼' })
                 }
 

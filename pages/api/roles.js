@@ -1,15 +1,12 @@
-import { createClient } from '@supabase/supabase-js'
-
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
-const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY
-
-const supabaseAdmin = createClient(supabaseUrl, serviceRoleKey, {
-    auth: { persistSession: false }
-})
+import { requireUser, supabaseAdmin } from '../../lib/auth'
 
 export default async function handler(req, res) {
     const { method } = req
     const { projectId } = req.query
+
+    // 分析角色（含 system prompt）只給後台使用者；修改需要 manage_roles
+    const user = await requireUser(req, res, { backend: true })
+    if (!user) return
 
     // GET: List all roles (optionally filtered by project)
     if (method === 'GET') {
@@ -36,6 +33,9 @@ export default async function handler(req, res) {
 
     // POST: Create or update a role
     if (method === 'POST') {
+        if (!user.perms.manage_roles) {
+            return res.status(403).json({ error: '權限不足' })
+        }
         const { type, data } = req.body
 
         try {

@@ -1,11 +1,4 @@
-import { createClient } from '@supabase/supabase-js'
-
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
-const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY
-
-const supabaseAdmin = createClient(supabaseUrl, serviceRoleKey, {
-    auth: { persistSession: false }
-})
+import { requireUser, supabaseAdmin, canViewRoom, isRoomMember } from '../../../lib/auth'
 
 export default async function handler(req, res) {
     const { method } = req
@@ -13,6 +6,13 @@ export default async function handler(req, res) {
 
     if (!roomId) {
         return res.status(400).json({ error: 'Missing roomId' })
+    }
+
+    const user = await requireUser(req, res)
+    if (!user) return
+
+    if (!(await canViewRoom(user, roomId))) {
+        return res.status(403).json({ error: '權限不足' })
     }
 
     // GET: Fetch room analysis results (specifically the final HMW step)
@@ -244,10 +244,28 @@ export default async function handler(req, res) {
 
     // POST: Submit a vote
     if (method === 'POST') {
-        const { hmwIndex, userId, vote, runId } = req.body
+        const { hmwIndex, vote, runId } = req.body
+        const userId = user.id
 
-        if (hmwIndex === undefined || !userId) {
+        if (hmwIndex === undefined) {
             return res.status(400).json({ error: 'Missing required fields' })
+        }
+
+        // 投票只限研究室成員（後台檢視者不能代投）
+        if (!(await isRoomMember(userId, roomId))) {
+            return res.status(403).json({ error: '只有研究室成員可以投票' })
+        }
+
+        // runId 必須屬於這個研究室
+        if (runId) {
+            const { data: run } = await supabaseAdmin
+                .from('analysis_runs')
+                .select('room_id')
+                .eq('id', runId)
+                .maybeSingle()
+            if (!run || run.room_id !== roomId) {
+                return res.status(400).json({ error: '分析紀錄與研究室不符' })
+            }
         }
 
         try {

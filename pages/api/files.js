@@ -1,21 +1,25 @@
-import { createClient } from '@supabase/supabase-js'
+import { requireUser, supabaseAdmin, canEditProject } from '../../lib/auth'
 
-const supabaseUrl = process.env. NEXT_PUBLIC_SUPABASE_URL
-const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY
-
-const supabaseAdmin = createClient(supabaseUrl, serviceRoleKey, {
-  auth: { persistSession: false }
-})
+const BUCKET = process.env.NEXT_PUBLIC_SUPABASE_BUCKET || 'uploads'
 
 export default async function handler(req, res) {
   if (req. method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' })
   }
 
-  const { bucket, path, projectId, filename, contentType } = req.body
+  // 舊流程（以 project 為單位上傳檔案）：只有能編輯該分析模式的後台使用者可以用
+  const user = await requireUser(req, res, { permission: 'manage_modes' })
+  if (!user) return
+
+  const { path, projectId, filename, contentType } = req.body
+  const bucket = BUCKET // 不接受前端指定 bucket
 
   if (!path || !projectId || !filename) {
     return res.status(400).json({ error: 'Missing required fields' })
+  }
+
+  if (!(await canEditProject(user, projectId))) {
+    return res.status(403).json({ error: '權限不足' })
   }
 
   try {

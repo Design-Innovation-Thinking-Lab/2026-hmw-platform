@@ -24,6 +24,8 @@ import {
   ThumbsUp,
   LayoutCards
 } from '../components/icons'
+import { apiFetch } from '../lib/apiFetch'
+import { logout } from '../lib/session'
 
 export default function LandingPage() {
   const router = useRouter()
@@ -53,11 +55,8 @@ export default function LandingPage() {
     }
   }, [])
 
-  const handleLogout = () => {
-    localStorage.removeItem('userId')
-    localStorage.removeItem('userName')
-    localStorage.removeItem('adminAuth')
-    localStorage.removeItem('isAdmin')
+  const handleLogout = async () => {
+    await logout()
     setIsLoggedIn(false)
     setUserName('')
     setMobileNavOpen(false)
@@ -78,7 +77,7 @@ export default function LandingPage() {
     }
 
     try {
-      const res = await fetch('/api/contact', {
+      const res = await apiFetch('/api/contact', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(contactForm)

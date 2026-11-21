@@ -10,7 +10,7 @@ repo 裡**沒有任何金鑰**（`.env.local` 在 `.gitignore`），所以下面
 |---|---|---|---|
 | **Supabase** | Postgres + 檔案 Storage | Free 可開發；長期使用建議 Pro（Free 專案閒置一週會暫停） | Project URL、anon key、service_role key |
 | **Anthropic（Claude API）** | 所有 LLM 呼叫 | console.anthropic.com 申請，無審核流程，直接買額度即可用 | API key |
-| **Heroku**（或其他平台） | 跑 web + worker | worker 需常駐，不能用會休眠的方案；個人測試用途可以先不部署，本機跑 `npm run dev` + `npm run worker` 即可 | — |
+| **Vercel**（研究室帳號） | 跑網站、API、每分鐘的 Cron（分析） | 需要 Pro 方案（每分鐘 Cron、800 秒執行時間）。本機開發跑 `npm run dev` + `npm run worker` 即可 | — |
 
 變數對應關係見 [`.env.local.example`](../.env.local.example)。
 
@@ -28,7 +28,7 @@ repo 裡**沒有任何金鑰**（`.env.local` 在 `.gitignore`），所以下面
 □ 3. Supabase SQL Editor：跑 migrations/bundle/01_run_first.sql
 □ 4. 確認成功後，再跑 migrations/bundle/02_run_second.sql
         ⚠️ 一定要分兩次、照順序，原因見 migrations/README.md
-□ 5. Supabase Storage：建立 bucket「uploads」，設為 Public
+□ 5. Supabase Storage：建立 bucket「uploads」，設為私人（不要勾 Public），File size limit 設 50 MB
 □ 6. Anthropic：console.anthropic.com 申請 API key（建議先買 US$20 額度）
 □ 7. cp .env.local.example .env.local，填入 2、5、6 的值
 □ 8. npm run dev（終端機 A）+ npm run worker（終端機 B）
@@ -38,7 +38,7 @@ repo 裡**沒有任何金鑰**（`.env.local` 在 `.gitignore`），所以下面
          （領航員 / 教練 / 建築師）
 □ 12. /admin/steps：有 4 個步驟原本帶範例圖，需要時自行重新上傳
 □ 13. 建一個研究室 → 上傳一份逐字稿 → 跑一次分析，確認 worker 有反應、結果有出來
-□ 14. 部署：建 app、設環境變數、push、把 web 與 worker 都 scale 到 1
+□ 14. 部署：由老師在 Vercel 設定環境變數（含 CRON_SECRET），push 到 main 自動部署；Cron 由 vercel.json 設定
 □ 15. 在部署環境重複 9–13
 ```
 
@@ -46,10 +46,10 @@ repo 裡**沒有任何金鑰**（`.env.local` 在 `.gitignore`），所以下面
 
 | 症狀 | 可能原因 |
 |---|---|
-| 分析一直卡在 `pending` | worker 沒在跑，或 `ANTHROPIC_API_KEY` 錯。看 worker 的 log |
-| 分析失敗，前端只顯示「連線逾時中斷」 | 這是 `engine.js` 包過的泛用訊息，真正的錯誤在 worker log 裡，往上找 `Claude (Anthropic) Error:` 那一段 |
+| 分析一直卡在 `pending` | 本機：`npm run worker` 沒在跑。Vercel：Cron 沒有執行（方案不支援每分鐘、或 `CRON_SECRET` 沒設），或 `ANTHROPIC_API_KEY` 錯。看 `/api/cron/worker` 的 log |
+| 分析失敗，前端只顯示「連線逾時中斷」 | 這是 `engine.js` 包過的泛用訊息，真正的錯誤在 worker（Vercel 上是 `/api/cron/worker`）的 log 裡，往上找 `Claude (Anthropic) Error:` 那一段 |
 | 後台看不到任何分析模式 | `bundle/02_run_second.sql` 沒執行（或只跑了第 1 份） |
-| 上傳檔案失敗 | bucket 名稱跟 `NEXT_PUBLIC_SUPABASE_BUCKET` 不一致，或沒設成 Public |
+| 上傳檔案失敗 | bucket 名稱跟 `NEXT_PUBLIC_SUPABASE_BUCKET` 不一致，或 bucket 的 File size limit 小於檔案 |
 | 進不了 `/admin` | 帳號的 `role` 不是 `system_admin`，用 templates 那支 SQL 設定 |
 | `npm run build` 報 `supabaseUrl is required` | build 階段就需要環境變數，先準備好 `.env.local` |
 | 跑第 2 份 SQL 報 enum 相關錯誤 | 第 1 份沒先 commit，兩份要分開按 Run |
@@ -74,10 +74,10 @@ repo 裡**沒有任何金鑰**（`.env.local` 在 `.gitignore`），所以下面
 
 | # | 問題 | 位置 | 說明 |
 |---|---|---|---|
-| 1 | **密碼明文儲存** | `users.verification_password`、`pages/api/users/login.js` | 沒有 hash，直接用 `.eq()` 比對。學生帳號預設密碼 = 學號 |
-| 2 | **API 授權靠前端自報身分** | `pages/api/*`、`localStorage.userRole` | 沒有 session / JWT，request 帶什麼 userId 就當成是誰。課堂內網勉強可用，對外必須改 |
-| 3 | **debug API 無任何保護** | `pages/api/debug/fix-run.js` | 可直接 reset 任何研究室的分析狀態。研究室頁面有在呼叫它，不能直接刪，建議加管理員檢查 |
-| 4 | RLS policy 形同虛設 | `migrations/014` | 全部 `USING (true)`，且 app 走 service_role 本來就繞過 RLS。目前無害，但不要誤以為資料庫層有防護 |
+| 1 | ~~密碼明文儲存~~（已修，2026-11） | `migrations/025` | 改用 Supabase Auth（Email + 密碼、Google），明文密碼欄位已刪除 |
+| 2 | ~~API 授權靠前端自報身分~~（已修，2026-11） | `lib/auth.js`、`lib/apiFetch.js` | 每支 API 用 Supabase Auth 的 JWT 判斷身分，`localStorage` 只當顯示快取 |
+| 3 | ~~debug API 無任何保護~~（已修，2026-11） | `pages/api/debug/fix-run.js` | 只限 system_admin / platform_manager；研究室頁面的「重新分析」已不再呼叫它 |
+| 4 | ~~RLS policy 形同虛設~~（已修，2026-11） | `migrations/025` | 原本全部 `USING (true)`，anon key 可讀寫所有表。025 已刪除這些 policy，只有伺服器端的 service_role 能存取 |
 | 5 | 聯絡表單不會寄信 | `pages/api/contact.js` | Resend 的程式碼被註解掉，目前只 `console.log` |
 | 6 | 舊架構遺留表未清理 | 資料庫 | 正式環境有 7 張舊表帶著歷史資料，現行程式碼完全不讀寫。詳見 migrations/README.md |
 | 7 | 010 / 011 與 003 內容重複 | `migrations/` | 歷史原因，全部 `IF NOT EXISTS`，無害 |

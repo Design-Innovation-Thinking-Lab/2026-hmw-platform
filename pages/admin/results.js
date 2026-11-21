@@ -5,6 +5,7 @@ import { adminStyles } from '../../styles/adminStyles'
 import {
     BarChart
 } from '../../components/icons'
+import { apiFetch } from '../../lib/apiFetch'
 
 export default function ResultsPage() {
     const router = useRouter()
@@ -73,7 +74,7 @@ export default function ResultsPage() {
         setLoadingProjects(true)
         try {
             const storedUserId = localStorage.getItem('userId')
-            const res = await fetch(`/api/projects${storedUserId ? `?userId=${storedUserId}` : ''}`)
+            const res = await apiFetch(`/api/projects${storedUserId ? `?userId=${storedUserId}` : ''}`)
             const data = await res.json()
             if (!res.ok) throw new Error(data.error)
             setProjects(data.projects || [])
@@ -86,7 +87,7 @@ export default function ResultsPage() {
 
     async function fetchAllRooms() {
         try {
-            const res = await fetch('/api/admin/rooms')
+            const res = await apiFetch('/api/admin/rooms')
             const data = await res.json()
             if (res.ok) setRooms(data.rooms || [])
         } catch (err) {
@@ -105,7 +106,7 @@ export default function ResultsPage() {
 
         setLoading(true)
         try {
-            const res = await fetch(`/api/analysis/results?${params}`)
+            const res = await apiFetch(`/api/analysis/results?${params}`)
             const data = await res.json()
             if (!res.ok) throw new Error(data.error)
             setResults(data.results || [])

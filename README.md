@@ -7,7 +7,7 @@
 | 用途 | 上傳訪談逐字稿，AI 依多步驟流程分析，產出 HMW 問題句，團隊在研究室裡投票 |
 | 負責人 | DITL Jintin（開發）；DITL Jenny（接手）（Email、電話只寫在研究室的私有登記表） |
 | 網站 | https://2026-hmw-platform.vercel.app/ （測試中，只放假資料） |
-| 用到的服務 | GitHub（本 repo）、Vercel（網站與 API、Cron）、Supabase（資料庫、Storage 私人 bucket `uploads`）、Anthropic API（研究室的 key） |
+| 用到的服務 | GitHub（本 repo）、Vercel（網站與 API、Cron）、Supabase（資料庫、Auth、Storage 私人 bucket `uploads`）、Google Cloud（Google 登入用的 OAuth 用戶端，設定在 Supabase Auth 的 Google provider）、Anthropic API（研究室的 key） |
 | 聯絡 | drhhtang@gapps.ntust.edu.tw |
 | 狀態 | 搬進研究室中（2026-11）；正式上線前要先完成下面的安全修正 |
 
@@ -15,12 +15,12 @@
 
 這個專案從學生交的 zip 建立，原本部署在 Heroku。搬到研究室的 Vercel + Supabase 之前，**一定要先修好**以下問題（詳見 [docs/SETUP.md](docs/SETUP.md) 第五節），修好並經過審核之前不放真資料、不公開網址：
 
-- [ ] 密碼改成雜湊，或改用 Supabase Auth（目前明文儲存）
-- [ ] API 改在伺服器端確認身分（目前相信前端送來的 userId）
-- [ ] `pages/api/debug/fix-run.js` 加上管理員檢查
-- [ ] Storage bucket `uploads` 改成私人，用 signed URL 讀取
-- [ ] 常駐 worker 改成 Vercel Cron 定時呼叫受保護的 API，每次跑一輪（可借用 `WORKER_MODE=job`）
-- [ ] 超過 4.5 MB 的上傳改用 signed upload URL 直接傳到 Storage
+- [x] 密碼改用 Supabase Auth（Email + 密碼、Google 登入）；舊的明文密碼欄位已刪除（migration 025）
+- [x] API 改在伺服器端確認身分：每支 `pages/api/*` 都用 Supabase Auth 的 token 判斷是誰（`lib/auth.js`），不再相信前端送來的 userId
+- [x] `pages/api/debug/fix-run.js` 加上管理員檢查（system_admin / platform_manager）
+- [x] Storage bucket `uploads` 是私人的：讀檔用 signed URL（`/api/storage/signed-url`），上傳用 signed upload URL（`/api/storage/upload-url`），都先在伺服器端檢查權限（`lib/storage.js`）
+- [x] 常駐 worker 改成 Vercel Cron 每分鐘呼叫 `/api/cron/worker`（檢查 `CRON_SECRET`），每次跑一輪；一輪跑不完的分析下一輪接著跑，並記錄最長的一步（`analysis_runs.longest_call_ms`）
+- [x] 超過 4 MB 的逐字稿改用 signed upload URL 直接傳到 Storage，由伺服器解析成文字後刪除原始檔（單檔上限 50 MB）
 
 ### 接手（學生）
 
@@ -41,24 +41,26 @@
 ## 架構
 
 ```
-                      ┌──────────────────────────────┐
-  瀏覽器 ───────────▶ │  web   (Next.js 14, pages/)   │──┐
-                      └──────────────────────────────┘  │
-                                                        ▼
-                      ┌──────────────────────────────┐   Supabase
-  背景輪詢 ◀───────── │  worker (server/worker.js)    │◀─▶ Postgres + Storage
-  解析檔案、跑分析    └──────────────────────────────┘
-                                 │
-                                 ▼
-                           Azure OpenAI
+  瀏覽器 ──▶ Vercel：Next.js 14（pages/、pages/api/*）──▶ Supabase：Auth、Postgres、私人 Storage
+                                                     ▲
+  Vercel Cron（每分鐘）──▶ /api/cron/worker ─────────┘──▶ Anthropic API（Claude）
 ```
 
-兩個 process 都要跑，平台才完整：
+| 元件 | 做什麼 |
+|---|---|
+| **web**（`pages/`、`pages/api/*`） | 前端頁面 + API。每支 API 先用 Supabase Auth 的 token 確認身分（`lib/auth.js`），再用 `SUPABASE_SERVICE_ROLE_KEY` 存取資料庫 |
+| **cron worker**（`pages/api/cron/worker.js`） | Vercel Cron 每分鐘呼叫一次。搶下 `status='pending'`（或上一輪暫停）的分析，依 `analysis_flow_steps` 逐步呼叫 Claude。一輪最多 800 秒，跑不完就暫停、下一輪接著跑（`lib/analysis/cronRunner.js`） |
 
-| Process | 指令 | 做什麼 |
-|---|---|---|
-| **web** | `npm run dev` / `npm start` | 前端頁面 + `/api/*`。所有資料庫存取走 `SUPABASE_SERVICE_ROLE_KEY` |
-| **worker** | `npm run worker` | 每 5 秒輪詢：`files.status='uploaded'` → 解析成段落；`analysis_runs.status='pending'` → 依 `analysis_flow_steps` 逐步呼叫 Azure OpenAI |
+**分析怎麼分好幾輪跑完**：每次呼叫 LLM 之前檢查剩下的時間，少於「最近分析最長的一步 × 1.25 + 30 秒」
+（至少 300 秒）就暫停；下一輪會跳過已經有結果的步驟和逐字稿。某一輪如果被 Vercel 中途砍掉，
+租約過期後下一輪也會接手，但同一個分析被砍超過 2 次就標成失敗（避免一直重跑、一直花錢）。
+每個分析「最長的一步」（單次 LLM 呼叫，含重試）記在 `analysis_runs.longest_call_ms` / `longest_call_label`，
+查詢方式：
+
+```sql
+select created_at, status, tick_count, crash_count, longest_call_ms / 1000.0 as longest_s, longest_call_label
+from analysis_runs order by created_at desc limit 20;
+```
 
 **分析用的 prompt 存在資料庫，不在程式碼裡**（`analysis_roles.system_prompt`、
 `analysis_flow_steps.prompt_template`），從後台 `/admin/steps` 編輯，改完不需要重新部署。
@@ -74,7 +76,7 @@ cp .env.local.example .env.local   # 填入 Supabase 與 Azure OpenAI 的值
 ```
 
 資料庫：在 Supabase 建一個新專案，依 [migrations/README.md](migrations/README.md)
-跑 `migrations/bundle/` 裡的兩份 SQL，再建立 Public bucket `uploads`。
+跑 `migrations/bundle/` 裡的兩份 SQL，再建立**私人**（不要勾 Public）bucket `uploads`。
 完整流程見 [docs/SETUP.md](docs/SETUP.md)。
 
 啟動（兩個終端機，或用 `./start-dev.sh` 一次起兩個）：
@@ -84,30 +86,39 @@ npm run dev
 ```
 
 ```bash
-npm run worker
+npm run worker   # 本機沒有 Vercel Cron，用這支重複跑同一個 runWorkerTick()
 ```
 
 - http://localhost:3000 — 首頁 / 登入 / 註冊
 - http://localhost:3000/admin — 後台（需 `system_admin` 角色，見 `migrations/templates/set_first_admin.sql`）
+
+### 登入（Supabase Auth）
+
+登入、註冊、忘記密碼都由 Supabase Auth 處理，密碼由 Supabase 雜湊保存，程式碼碰不到。
+前端呼叫 API 一律用 `lib/apiFetch.js`（自動帶 `Authorization: Bearer <token>`），
+API 開頭呼叫 `requireUser(req, res, {...})`（`lib/auth.js`）確認身分與權限。
+`localStorage` 裡的 `userId` / `userName` 只是畫面顯示用的快取，伺服器不採信。
+
+Supabase Dashboard 需要設定（找老師）：
+1. **Authentication → URL Configuration**：Site URL 設成網站網址；Redirect URLs 加上
+   `<網站網址>/auth/callback`、`<網站網址>/reset-password`（本機開發另外加 `http://localhost:3000/**`）。
+2. **Authentication → Providers → Email**：建議開啟「Confirm email」。
+3. **Authentication → Providers → Google**：開啟，填入 Google Cloud 的 OAuth Client ID / Secret。
+   Google Cloud Console 的「已授權的重新導向 URI」填 `https://<supabase 專案>.supabase.co/auth/v1/callback`。
+4. 寄信：Supabase 內建的寄信額度很低，正式上線前建議在 **Authentication → SMTP Settings** 設定研究室的寄信服務。
 
 > `npm run build` 在 build 階段就需要 `NEXT_PUBLIC_SUPABASE_URL`
 > （`lib/supabaseClient.js` 在模組載入時就建立 client），所以本機 build 前要先準備好 `.env.local`。
 
 ## 部署
 
-> 研究室版本改用 Vercel + Supabase（見上方「研究室部署狀態」）。以下是原本的 Heroku 做法，搬遷完成後會改寫。
+部署在研究室的 Vercel（push 到 `main` 自動部署），資料庫與登入在研究室的 Supabase。
+部署有問題請找老師或助理，不要改用其他平台或個人帳號。
 
-正式環境跑在 **Heroku**，`Procfile` 定義 `web` 與 `worker` 兩個 dyno。
-
-```bash
-heroku create <app-name>
-git push heroku main
-heroku ps:scale web=1 worker=1
-```
-
-環境變數填在 Dashboard → Settings → Config Vars（內容同 `.env.local`）。
-
-`worker` 是常駐輪詢，**不適用會休眠的 dyno 方案**，否則分析會卡在 pending。
+- `vercel.json`：Cron 每分鐘呼叫 `/api/cron/worker`，這支函式的 `maxDuration` 是 800 秒。
+  每分鐘一次的 Cron 和 800 秒的執行時間需要 Vercel Pro 方案（Hobby 方案的 Cron 一天只能跑一次）。
+- 環境變數在 Vercel 的 Environment Variables 設定，清單見 `.env.local.example`。`CRON_SECRET` 已由老師設定。
+- `Procfile` 是舊的 Heroku 設定，Vercel 不會用到。
 
 ## 目錄
 
@@ -117,8 +128,9 @@ pages/            Next.js 頁面與 API routes
   api/            REST endpoints（analysis/、rooms/、users/…）
   room/[id].js    研究室主畫面
 lib/analysis/     分析引擎（engine.js）、附件處理、smart inject
-lib/llm/          Azure OpenAI 封裝 + rate limiter
-server/           worker.js（輪詢主程式）、parseWorker.js（txt/docx/pdf 解析）
+lib/llm/          Claude（Anthropic）封裝 + rate limiter
+lib/auth.js       伺服器端身分驗證；lib/storage.js 私人 bucket 的 signed URL
+server/           worker.js（本機開發用，重複跑 lib/analysis/cronRunner.js 的一輪）
 migrations/       資料庫 SQL；bundle/ 是打包好可直接執行的兩份，README 有說明
 docs/             架設指南、分析步驟設計、prompt 變數說明
 ```
